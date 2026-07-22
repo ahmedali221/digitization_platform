@@ -1,0 +1,750 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet data-dc-atomics>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Figtree:wght@400;500;600;700&family=Material+Symbols+Rounded:opsz,wght,FILL,GRAD@24,500,0,0&display=swap" rel="stylesheet">
+<style>
+  body{margin:0}
+  .ms{font-family:'Material Symbols Rounded';font-weight:normal;font-style:normal;font-size:20px;line-height:1;letter-spacing:normal;text-transform:none;white-space:nowrap;word-wrap:normal;direction:ltr;font-variation-settings:'FILL' 0,'wght' 500,'GRAD' 0,'opsz' 24;-webkit-font-smoothing:antialiased}
+  a{color:#1D4ED8}
+  a:hover{color:#1E40AF}
+</style>
+</helmet>
+<div style="min-height:100vh;background:#EEF0F3;display:flex;align-items:center;justify-content:center;padding:48px;font-family:'Figtree',system-ui,sans-serif;box-sizing:border-box">
+<x-import component-from-global-scope="AndroidDevice" from="./android-frame.jsx" hint-size="412,892">
+<div style="height:100%;display:flex;flex-direction:column;position:relative;background:#F9FAFB;overflow:hidden;font-family:'Figtree',system-ui,sans-serif">
+
+<sc-if value="{{ isSitesScreen }}" hint-placeholder-val="{{ true }}">
+<div style="display:flex;flex-direction:column;height:100%">
+  <div style="display:flex;align-items:center;justify-content:space-between;padding:20px 20px 12px;flex-shrink:0">
+    <span style="font-size:22px;font-weight:600;color:#111827">Sites</span>
+    <div style="display:flex;align-items:center;gap:6px">
+      <div style="width:36px;height:36px;border-radius:18px;display:flex;align-items:center;justify-content:center" style-hover="background:#F1F2F4" onClick="{{ openSync }}">
+        <span class="ms" style="font-size:20px;color:#374151">sync</span>
+      </div>
+      <div style="width:36px;height:36px;border-radius:18px;display:flex;align-items:center;justify-content:center" style-hover="background:#F1F2F4" onClick="{{ openUnassigned }}">
+        <span class="ms" style="font-size:20px;color:#374151">assignment</span>
+      </div>
+      <sc-if value="{{ isOffline }}" hint-placeholder-val="{{ true }}">
+        <div style="display:flex;align-items:center;gap:4px;background:#F1F2F4;border-radius:100px;padding:5px 10px 5px 8px">
+          <span class="ms" style="font-size:16px;color:#374151">wifi_off</span>
+          <span style="font-size:12px;font-weight:600;color:#374151">Offline</span>
+        </div>
+      </sc-if>
+    </div>
+  </div>
+
+  <sc-if value="{{ isOffline }}" hint-placeholder-val="{{ true }}">
+    <div style="display:flex;align-items:center;gap:8px;background:#FEF3C7;color:#92400E;padding:10px 20px;flex-shrink:0">
+      <span class="ms" style="font-size:18px">wifi_off</span>
+      <span style="font-size:13px;font-weight:500">No connection — showing cached data</span>
+    </div>
+  </sc-if>
+
+  <div style="padding:16px 20px 4px;font-size:14px;color:#6B7280;flex-shrink:0">{{ readyCount }} of {{ totalCount }} sites ready for field</div>
+
+  <div style="flex:1;overflow:auto;padding:12px 16px 24px;display:flex;flex-direction:column;gap:12px;box-sizing:border-box">
+    <sc-for list="{{ sites }}" as="site" hint-placeholder-count="4">
+      <div style="background:#fff;border:1px solid #E5E7EB;border-radius:12px;padding:16px;display:flex;flex-direction:column;gap:12px" style-hover="box-shadow:0 2px 8px rgba(17,24,39,0.08)" onClick="{{ site.onOpen }}">
+        <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:12px">
+          <div style="display:flex;flex-direction:column;gap:2px;min-width:0">
+            <span style="font-size:18px;font-weight:600;color:#111827;line-height:1.3">{{ site.name }}</span>
+            <span style="font-size:14px;color:#6B7280">{{ site.location }}</span>
+          </div>
+          <sc-if value="{{ site.isReady }}" hint-placeholder-val="{{ false }}">
+            <div style="display:flex;flex-direction:column;align-items:flex-end;gap:6px;flex-shrink:0">
+              <div style="display:flex;align-items:center;gap:4px;background:#D1FAE5;color:#065F46;border-radius:8px;padding:4px 8px">
+                <span class="ms" style="font-size:14px">check_circle</span>
+                <span style="font-size:12px;font-weight:600">Ready</span>
+              </div>
+              <sc-if value="{{ site.updateAvailable }}" hint-placeholder-val="{{ false }}">
+                <div style="display:flex;align-items:center;gap:4px;background:#FEF3C7;color:#92400E;border-radius:8px;padding:3px 7px">
+                  <span class="ms" style="font-size:12px">sync</span>
+                  <span style="font-size:11px;font-weight:600">Update available</span>
+                </div>
+              </sc-if>
+            </div>
+          </sc-if>
+        </div>
+
+        <sc-if value="{{ site.isNotDownloaded }}" hint-placeholder-val="{{ false }}">
+          <div style="display:flex;align-items:center;justify-content:space-between;gap:12px">
+            <span style="font-size:14px;color:#6B7280;display:flex;align-items:center;gap:6px"><span class="ms" style="font-size:16px;color:#9CA3AF">cloud_off</span>Not downloaded</span>
+            <div style="border:1.5px solid #1D4ED8;color:#1D4ED8;border-radius:8px;padding:8px 14px;font-size:14px;font-weight:600;display:flex;align-items:center;gap:6px" style-hover="background:#EFF4FF" onClick="{{ site.onDownload }}">
+              <span class="ms" style="font-size:16px">download</span>Download
+            </div>
+          </div>
+        </sc-if>
+
+        <sc-if value="{{ site.isDownloading }}" hint-placeholder-val="{{ false }}">
+          <div style="display:flex;flex-direction:column;gap:6px">
+            <div style="display:flex;justify-content:space-between;font-size:13px;color:#6B7280"><span>Downloading…</span><span>{{ site.progress }}%</span></div>
+            <div style="height:6px;border-radius:3px;background:#E5E7EB;overflow:hidden">
+              <div style="height:100%;border-radius:3px;background:#1D4ED8;transition:width 0.3s ease;width:{{ site.progressWidth }}"></div>
+            </div>
+          </div>
+        </sc-if>
+
+        <sc-if value="{{ site.isReady }}" hint-placeholder-val="{{ false }}">
+          <div style="display:flex;align-items:center;justify-content:space-between">
+            <span style="font-size:14px;color:#6B7280">{{ site.wallsCaptured }}/{{ site.wallsTotal }} walls · Synced {{ site.lastSynced }}</span>
+            <span class="ms" style="font-size:20px;color:#9CA3AF">chevron_right</span>
+          </div>
+        </sc-if>
+      </div>
+    </sc-for>
+  </div>
+</div>
+</sc-if>
+
+<sc-if value="{{ isOverviewScreen }}" hint-placeholder-val="{{ false }}">
+<div style="display:flex;flex-direction:column;height:100%;position:relative">
+  <div style="display:flex;align-items:center;gap:8px;padding:16px 12px 8px;flex-shrink:0">
+    <div style="width:40px;height:40px;border-radius:20px;display:flex;align-items:center;justify-content:center" style-hover="background:#F1F2F4" onClick="{{ goBack }}">
+      <span class="ms" style="font-size:22px;color:#111827">arrow_back</span>
+    </div>
+    <span style="font-size:20px;font-weight:600;color:#111827">{{ selectedSite.name }}</span>
+  </div>
+  <div style="padding:0 20px 14px;font-size:14px;color:#6B7280;flex-shrink:0">{{ selectedSite.wallsCaptured }}/{{ selectedSite.wallsTotal }} walls captured</div>
+
+  <div style="display:flex;flex-wrap:wrap;gap:14px;padding:0 20px 18px;flex-shrink:0">
+    <sc-for list="{{ legend }}" as="item" hint-placeholder-count="5">
+      <div style="display:flex;align-items:center;gap:5px">
+        <div style="width:9px;height:9px;border-radius:5px;background:{{ item.color }}"></div>
+        <span style="font-size:11px;font-weight:600;color:#374151">{{ item.label }}</span>
+      </div>
+    </sc-for>
+  </div>
+
+  <div style="flex:1;overflow:auto;padding:0 20px 24px;box-sizing:border-box">
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
+      <sc-for list="{{ selectedSite.zones }}" as="zone" hint-placeholder-count="4">
+        <div style="border-radius:12px;padding:16px;min-height:100px;display:flex;flex-direction:column;justify-content:space-between;box-sizing:border-box;background:{{ zone.bg }};border:1.5px solid {{ zone.border }}" onClick="{{ zone.onOpen }}">
+          <div style="display:flex;align-items:center;gap:5px">
+            <span class="ms" style="font-size:16px;color:{{ zone.color }}">{{ zone.icon }}</span>
+            <span style="font-size:11px;font-weight:600;color:{{ zone.color }}">{{ zone.label }}</span>
+          </div>
+          <div style="display:flex;flex-direction:column;gap:2px">
+            <span style="font-size:16px;font-weight:600;color:#111827">{{ zone.name }}</span>
+            <span style="font-size:12px;color:#6B7280">{{ zone.progressLabel }}</span>
+          </div>
+        </div>
+      </sc-for>
+    </div>
+  </div>
+
+  <sc-if value="{{ hasActiveZone }}" hint-placeholder-val="{{ false }}">
+    <div style="position:absolute;inset:0;background:rgba(17,24,39,0.45);z-index:10" onClick="{{ closeSheet }}"></div>
+    <div style="position:absolute;left:0;right:0;bottom:0;background:#fff;border-radius:24px 24px 0 0;padding:20px 20px 24px;max-height:72%;overflow:auto;z-index:11;box-shadow:0 -8px 24px rgba(0,0,0,0.18);box-sizing:border-box">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:4px">
+        <span style="font-size:18px;font-weight:600;color:#111827">{{ activeZone.name }}</span>
+        <div style="width:36px;height:36px;border-radius:18px;display:flex;align-items:center;justify-content:center" style-hover="background:#F1F2F4" onClick="{{ closeSheet }}">
+          <span class="ms" style="font-size:20px;color:#374151">close</span>
+        </div>
+      </div>
+      <div style="font-size:14px;color:#6B7280;margin-bottom:8px">{{ activeZone.progressLabel }} · tap a wall to open</div>
+      <sc-for list="{{ activeZone.walls }}" as="wall" hint-placeholder-count="4">
+        <div style="display:flex;align-items:center;justify-content:space-between;padding:12px 0;border-bottom:1px solid #F1F2F4;cursor:pointer" onClick="{{ wall.onSelect }}">
+          <div style="display:flex;flex-direction:column;gap:2px">
+            <span style="font-size:16px;color:#111827">{{ wall.name }}</span>
+            <span style="font-size:12px;color:#9CA3AF">{{ wall.lastCapture }}</span>
+          </div>
+          <div style="display:flex;align-items:center;gap:8px">
+            <div style="display:flex;align-items:center;gap:5px;background:{{ wall.bg }};color:{{ wall.color }};border-radius:8px;padding:5px 9px">
+              <span class="ms" style="font-size:15px">{{ wall.icon }}</span>
+              <span style="font-size:12px;font-weight:600">{{ wall.label }}</span>
+            </div>
+            <span class="ms" style="font-size:18px;color:#9CA3AF">chevron_right</span>
+          </div>
+        </div>
+      </sc-for>
+    </div>
+  </sc-if>
+
+  <sc-if value="{{ hasActiveWall }}" hint-placeholder-val="{{ false }}">
+    <div style="position:absolute;inset:0;background:rgba(17,24,39,0.55);z-index:20" onClick="{{ closeWallSheet }}"></div>
+    <div style="position:absolute;left:0;right:0;bottom:0;background:#fff;border-radius:24px 24px 0 0;padding:20px 20px 28px;z-index:21;box-shadow:0 -8px 24px rgba(0,0,0,0.2);box-sizing:border-box">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px">
+        <span style="font-size:18px;font-weight:600;color:#111827">{{ activeWall.name }}</span>
+        <div style="width:36px;height:36px;border-radius:18px;display:flex;align-items:center;justify-content:center" style-hover="background:#F1F2F4" onClick="{{ closeWallSheet }}">
+          <span class="ms" style="font-size:20px;color:#374151">close</span>
+        </div>
+      </div>
+      <div style="display:flex;align-items:center;gap:12px;margin-bottom:16px">
+        <div style="width:56px;height:56px;border-radius:10px;background:#E5E7EB;display:flex;align-items:center;justify-content:center;flex-shrink:0">
+          <span class="ms" style="font-size:26px;color:#9CA3AF">image</span>
+        </div>
+        <div style="display:flex;flex-direction:column;gap:6px">
+          <div style="display:flex;align-items:center;gap:5px;background:{{ activeWall.bg }};color:{{ activeWall.color }};border-radius:8px;padding:4px 8px;width:fit-content">
+            <span class="ms" style="font-size:15px">{{ activeWall.icon }}</span>
+            <span style="font-size:12px;font-weight:600">{{ activeWall.label }}</span>
+          </div>
+          <span style="font-size:13px;color:#6B7280">Last capture: {{ activeWall.lastCapture }}</span>
+        </div>
+      </div>
+      <div style="background:#1D4ED8;color:#fff;border-radius:12px;padding:14px;text-align:center;font-size:15px;font-weight:600" style-hover="background:#1E40AF" onClick="{{ activeWall.onCapture }}">{{ activeWall.captureLabel }}</div>
+    </div>
+  </sc-if>
+</div>
+</sc-if>
+
+<sc-if value="{{ isGridInitScreen }}" hint-placeholder-val="{{ false }}">
+<div style="display:flex;flex-direction:column;height:100%">
+  <div style="display:flex;align-items:center;gap:8px;padding:16px 12px 8px;flex-shrink:0">
+    <div style="width:40px;height:40px;border-radius:20px;display:flex;align-items:center;justify-content:center" style-hover="background:#F1F2F4" onClick="{{ backToOverview }}">
+      <span class="ms" style="font-size:22px;color:#111827">arrow_back</span>
+    </div>
+    <span style="font-size:20px;font-weight:600;color:#111827">Set up grid</span>
+  </div>
+  <div style="padding:0 20px 20px;font-size:14px;color:#6B7280">{{ captureWallName }} · choose a coverage grid</div>
+
+  <div style="flex:1;overflow:auto;padding:0 20px 24px">
+    <div style="font-size:12px;font-weight:600;color:#6B7280;text-transform:uppercase;letter-spacing:0.04em;margin-bottom:10px">Presets</div>
+    <div style="display:flex;flex-direction:column;gap:10px;margin-bottom:24px">
+      <sc-for list="{{ gridPresets }}" as="preset" hint-placeholder-count="3">
+        <div style="display:flex;align-items:center;justify-content:space-between;border-radius:12px;padding:14px 16px;border:1.5px solid {{ preset.border }};background:{{ preset.bg }}" onClick="{{ preset.onPick }}">
+          <div style="display:flex;align-items:center;gap:12px">
+            <span class="ms" style="font-size:22px;color:#1D4ED8">grid_view</span>
+            <span style="font-size:15px;font-weight:600;color:#111827">{{ preset.label }}</span>
+          </div>
+          <span style="font-size:13px;color:#6B7280">{{ preset.cellCount }} cells</span>
+        </div>
+      </sc-for>
+    </div>
+
+    <div style="font-size:12px;font-weight:600;color:#6B7280;text-transform:uppercase;letter-spacing:0.04em;margin-bottom:10px">Custom</div>
+    <div style="border:1.5px solid #E5E7EB;border-radius:12px;padding:16px;display:flex;flex-direction:column;gap:16px">
+      <div style="display:flex;align-items:center;justify-content:space-between">
+        <span style="font-size:14px;color:#374151">Rows</span>
+        <div style="display:flex;align-items:center;gap:14px">
+          <div style="width:32px;height:32px;border-radius:16px;background:#F1F2F4;display:flex;align-items:center;justify-content:center" onClick="{{ decRows }}"><span class="ms" style="font-size:18px;color:#374151">remove</span></div>
+          <span style="font-size:16px;font-weight:600;color:#111827;width:16px;text-align:center">{{ customRows }}</span>
+          <div style="width:32px;height:32px;border-radius:16px;background:#F1F2F4;display:flex;align-items:center;justify-content:center" onClick="{{ incRows }}"><span class="ms" style="font-size:18px;color:#374151">add</span></div>
+        </div>
+      </div>
+      <div style="display:flex;align-items:center;justify-content:space-between">
+        <span style="font-size:14px;color:#374151">Columns</span>
+        <div style="display:flex;align-items:center;gap:14px">
+          <div style="width:32px;height:32px;border-radius:16px;background:#F1F2F4;display:flex;align-items:center;justify-content:center" onClick="{{ decCols }}"><span class="ms" style="font-size:18px;color:#374151">remove</span></div>
+          <span style="font-size:16px;font-weight:600;color:#111827;width:16px;text-align:center">{{ customCols }}</span>
+          <div style="width:32px;height:32px;border-radius:16px;background:#F1F2F4;display:flex;align-items:center;justify-content:center" onClick="{{ incCols }}"><span class="ms" style="font-size:18px;color:#374151">add</span></div>
+        </div>
+      </div>
+      <div style="font-size:13px;color:#6B7280">{{ customCellCount }} cells total</div>
+      <div style="background:#1D4ED8;color:#fff;border-radius:10px;padding:12px;text-align:center;font-size:14px;font-weight:600" onClick="{{ useCustomGrid }}">Use custom grid</div>
+    </div>
+  </div>
+</div>
+</sc-if>
+
+<sc-if value="{{ isGridCaptureScreen }}" hint-placeholder-val="{{ false }}">
+<div style="display:flex;flex-direction:column;height:100%">
+  <div style="display:flex;align-items:center;gap:8px;padding:16px 12px 8px;flex-shrink:0">
+    <div style="width:40px;height:40px;border-radius:20px;display:flex;align-items:center;justify-content:center" style-hover="background:#F1F2F4" onClick="{{ backToOverview }}">
+      <span class="ms" style="font-size:22px;color:#111827">arrow_back</span>
+    </div>
+    <span style="font-size:20px;font-weight:600;color:#111827">{{ captureWallName }}</span>
+  </div>
+  <div style="padding:0 20px 16px;font-size:14px;color:#6B7280">{{ gridCoverageLabel }}</div>
+
+  <div style="flex:1;overflow:auto;padding:0 20px 16px">
+    <div style="display:grid;gap:10px;grid-template-columns:{{ gridTemplateColumns }}">
+      <sc-for list="{{ gridCells }}" as="cell" hint-placeholder-count="9">
+        <div style="aspect-ratio:1;border-radius:10px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:4px;background:{{ cell.bg }};border:2px solid {{ cell.border }}" onClick="{{ cell.onOpen }}">
+          <span style="font-size:12px;font-weight:600;color:{{ cell.textColor }}">{{ cell.label }}</span>
+          <sc-if value="{{ cell.hasPhotos }}" hint-placeholder-val="{{ false }}">
+            <div style="display:flex;align-items:center;gap:3px">
+              <span class="ms" style="font-size:14px;color:{{ cell.textColor }}">photo_camera</span>
+              <span style="font-size:11px;font-weight:600;color:{{ cell.textColor }}">{{ cell.photoCount }}</span>
+            </div>
+          </sc-if>
+          <sc-if value="{{ cell.isEmpty }}" hint-placeholder-val="{{ true }}">
+            <span class="ms" style="font-size:18px;color:{{ cell.textColor }}">add_a_photo</span>
+          </sc-if>
+        </div>
+      </sc-for>
+    </div>
+  </div>
+
+  <div style="padding:12px 20px 20px;flex-shrink:0">
+    <div style="border-radius:12px;padding:14px;text-align:center;font-size:15px;font-weight:600;background:{{ reviewButtonBg }};color:{{ reviewButtonColor }}" onClick="{{ goToCoverageReview }}">Review coverage</div>
+  </div>
+</div>
+</sc-if>
+
+<sc-if value="{{ isCameraScreen }}" hint-placeholder-val="{{ false }}">
+<div style="display:flex;flex-direction:column;height:100%;background:#14161A;position:relative">
+  <div style="flex:1;display:flex;align-items:center;justify-content:center;position:relative">
+    <span class="ms" style="font-size:64px;color:rgba(255,255,255,0.15)">landscape</span>
+    <div style="position:absolute;top:16px;left:16px;background:rgba(0,0,0,0.55);color:#fff;border-radius:8px;padding:6px 12px;font-size:14px;font-weight:600">{{ activeCellLabel }}</div>
+    <div style="position:absolute;top:16px;right:16px;width:36px;height:36px;border-radius:18px;background:rgba(0,0,0,0.55);display:flex;align-items:center;justify-content:center" onClick="{{ toggleExposureLock }}">
+      <span class="ms" style="font-size:20px;color:{{ exposureLockColor }}">lock</span>
+    </div>
+    <div style="position:absolute;top:16px;left:50%;transform:translateX(-50%)">
+      <div style="width:36px;height:36px;border-radius:18px;background:rgba(0,0,0,0.55);display:flex;align-items:center;justify-content:center" onClick="{{ backToGridCapture }}">
+        <span class="ms" style="font-size:20px;color:#fff">arrow_back</span>
+      </div>
+    </div>
+  </div>
+
+  <div style="padding:12px 16px;display:flex;gap:8px;overflow-x:auto;flex-shrink:0">
+    <sc-for list="{{ activeCellThumbs }}" as="thumb" hint-placeholder-count="0">
+      <div style="width:56px;height:56px;border-radius:8px;background:#2A2D33;flex-shrink:0;display:flex;align-items:center;justify-content:center;position:relative">
+        <span class="ms" style="font-size:22px;color:#6B7280">image</span>
+        <div style="position:absolute;top:2px;right:2px;width:18px;height:18px;border-radius:9px;background:rgba(0,0,0,0.7);display:flex;align-items:center;justify-content:center" onClick="{{ thumb.onDelete }}">
+          <span class="ms" style="font-size:12px;color:#fff">close</span>
+        </div>
+      </div>
+    </sc-for>
+  </div>
+
+  <div style="display:flex;align-items:center;justify-content:center;padding:16px 0 28px;flex-shrink:0">
+    <div style="width:72px;height:72px;border-radius:36px;background:#fff;border:4px solid rgba(255,255,255,0.4);display:flex;align-items:center;justify-content:center" onClick="{{ takePhoto }}">
+      <span class="ms" style="font-size:30px;color:#14161A">photo_camera</span>
+    </div>
+  </div>
+</div>
+</sc-if>
+
+<sc-if value="{{ isCoverageScreen }}" hint-placeholder-val="{{ false }}">
+<div style="display:flex;flex-direction:column;height:100%">
+  <div style="display:flex;align-items:center;gap:8px;padding:16px 12px 8px;flex-shrink:0">
+    <div style="width:40px;height:40px;border-radius:20px;display:flex;align-items:center;justify-content:center" style-hover="background:#F1F2F4" onClick="{{ backToGridCapture }}">
+      <span class="ms" style="font-size:22px;color:#111827">arrow_back</span>
+    </div>
+    <span style="font-size:20px;font-weight:600;color:#111827">Coverage review</span>
+  </div>
+  <div style="padding:0 20px 16px;font-size:14px;color:#6B7280">{{ captureWallName }} · {{ gridCoverageLabel }}</div>
+
+  <div style="flex:1;overflow:auto;padding:0 20px 16px">
+    <div style="display:grid;gap:10px;grid-template-columns:{{ gridTemplateColumns }}">
+      <sc-for list="{{ gridCells }}" as="cell" hint-placeholder-count="9">
+        <div style="aspect-ratio:1;border-radius:10px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;background:{{ cell.bg }};border:2px solid {{ cell.border }}">
+          <span style="font-size:11px;font-weight:600;color:{{ cell.textColor }}">{{ cell.label }}</span>
+          <span class="ms" style="font-size:16px;color:{{ cell.textColor }}">{{ cell.reviewIcon }}</span>
+        </div>
+      </sc-for>
+    </div>
+  </div>
+
+  <sc-if value="{{ coverageIncomplete }}" hint-placeholder-val="{{ false }}">
+    <div style="margin:0 20px 12px;background:#FEF3C7;color:#92400E;border-radius:10px;padding:10px 14px;font-size:13px;font-weight:500;display:flex;align-items:center;gap:8px">
+      <span class="ms" style="font-size:18px">warning</span>Some cells still need photos — you can save partial progress.
+    </div>
+  </sc-if>
+
+  <div style="padding:4px 20px 24px;display:flex;flex-direction:column;gap:10px;flex-shrink:0">
+    <div style="border-radius:12px;padding:14px;text-align:center;font-size:15px;font-weight:600;background:{{ saveButtonBg }};color:{{ saveButtonColor }}" onClick="{{ saveFull }}">Save</div>
+    <div style="border-radius:12px;padding:14px;text-align:center;font-size:15px;font-weight:600;border:1.5px solid #D97706;color:#92400E" onClick="{{ savePartial }}">Save partial</div>
+  </div>
+</div>
+</sc-if>
+
+<sc-if value="{{ isSyncScreen }}" hint-placeholder-val="{{ false }}">
+<div style="display:flex;flex-direction:column;height:100%">
+  <div style="display:flex;align-items:center;gap:8px;padding:16px 12px 8px;flex-shrink:0">
+    <div style="width:40px;height:40px;border-radius:20px;display:flex;align-items:center;justify-content:center" style-hover="background:#F1F2F4" onClick="{{ backToSites }}">
+      <span class="ms" style="font-size:22px;color:#111827">arrow_back</span>
+    </div>
+    <span style="font-size:20px;font-weight:600;color:#111827">Sync queue</span>
+  </div>
+  <div style="flex:1;overflow:auto;padding:8px 20px 24px;display:flex;flex-direction:column;gap:10px">
+    <sc-for list="{{ syncItems }}" as="item" hint-placeholder-count="4">
+      <div style="border:1px solid #E5E7EB;border-radius:12px;padding:14px 16px;display:flex;flex-direction:column;gap:8px">
+        <div style="display:flex;align-items:center;justify-content:space-between">
+          <span style="font-size:15px;font-weight:600;color:#111827">{{ item.name }}</span>
+          <div style="display:flex;align-items:center;gap:5px;background:{{ item.bg }};color:{{ item.color }};border-radius:8px;padding:4px 8px">
+            <span class="ms" style="font-size:14px">{{ item.icon }}</span>
+            <span style="font-size:12px;font-weight:600">{{ item.label }}</span>
+          </div>
+        </div>
+        <sc-if value="{{ item.isUploading }}" hint-placeholder-val="{{ false }}">
+          <div style="height:6px;border-radius:3px;background:#E5E7EB;overflow:hidden">
+            <div style="height:100%;border-radius:3px;background:#1D4ED8;transition:width 0.3s ease;width:{{ item.progressWidth }}"></div>
+          </div>
+        </sc-if>
+        <sc-if value="{{ item.isFailed }}" hint-placeholder-val="{{ false }}">
+          <div style="font-size:13px;color:#1D4ED8;font-weight:600" onClick="{{ item.onRetry }}">Retry</div>
+        </sc-if>
+      </div>
+    </sc-for>
+  </div>
+</div>
+</sc-if>
+
+<sc-if value="{{ isUnassignedScreen }}" hint-placeholder-val="{{ false }}">
+<div style="display:flex;flex-direction:column;height:100%">
+  <div style="display:flex;align-items:center;gap:8px;padding:16px 12px 8px;flex-shrink:0">
+    <div style="width:40px;height:40px;border-radius:20px;display:flex;align-items:center;justify-content:center" style-hover="background:#F1F2F4" onClick="{{ backToSites }}">
+      <span class="ms" style="font-size:22px;color:#111827">arrow_back</span>
+    </div>
+    <span style="font-size:20px;font-weight:600;color:#111827">Unassigned walls</span>
+  </div>
+  <div style="padding:0 20px 12px;font-size:14px;color:#6B7280">Captured before a room was assigned — link these to a wall when back online</div>
+  <div style="flex:1;overflow:auto;padding:0 20px 24px;display:flex;flex-direction:column;gap:10px">
+    <sc-for list="{{ unassignedWalls }}" as="item" hint-placeholder-count="3">
+      <div style="border:1px solid #E5E7EB;border-radius:12px;padding:14px 16px;display:flex;align-items:center;gap:12px">
+        <div style="width:44px;height:44px;border-radius:8px;background:#E5E7EB;display:flex;align-items:center;justify-content:center;flex-shrink:0">
+          <span class="ms" style="font-size:20px;color:#9CA3AF">image</span>
+        </div>
+        <div style="flex:1;display:flex;flex-direction:column;gap:4px;min-width:0">
+          <div style="display:flex;align-items:center;gap:8px">
+            <span style="font-size:13px;font-weight:700;color:#374151;background:#F1F2F4;border-radius:6px;padding:2px 6px">{{ item.localId }}</span>
+            <sc-if value="{{ item.noteRequired }}" hint-placeholder-val="{{ false }}">
+              <span class="ms" style="font-size:16px;color:#D97706">flag</span>
+            </sc-if>
+          </div>
+          <span style="font-size:13px;color:#6B7280">{{ item.photoCount }} photos captured</span>
+        </div>
+        <span class="ms" style="font-size:20px;color:#9CA3AF">chevron_right</span>
+      </div>
+    </sc-for>
+  </div>
+</div>
+</sc-if>
+
+</div>
+</x-import>
+</div>
+
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{&quot;$preview&quot;:{&quot;width&quot;:520,&quot;height&quot;:960},&quot;isOffline&quot;:{&quot;editor&quot;:&quot;boolean&quot;,&quot;default&quot;:true,&quot;tsType&quot;:&quot;boolean&quot;}}">
+class Component extends DCLogic {
+  STATUS = {
+    not_started: { color: '#6B7280', bg: '#F1F2F4', border: '#D1D5DB', icon: 'radio_button_unchecked', label: 'Not started' },
+    in_progress: { color: '#D97706', bg: '#FEF3C7', border: '#FCD34D', icon: 'autorenew', label: 'In progress' },
+    captured: { color: '#2563EB', bg: '#DBEAFE', border: '#93C5FD', icon: 'cloud_done', label: 'Captured' },
+    done: { color: '#059669', bg: '#D1FAE5', border: '#6EE7B7', icon: 'check_circle', label: 'Done' },
+    skipped: { color: '#64748B', bg: '#E2E8F0', border: '#CBD5E1', icon: 'block', label: 'Skipped' },
+  };
+  CYCLE = ['not_started', 'in_progress', 'captured', 'done'];
+  GRID_PRESETS = [
+    { rows: 2, cols: 2, label: '2 × 2' },
+    { rows: 3, cols: 3, label: '3 × 3' },
+    { rows: 4, cols: 3, label: '4 × 3' },
+  ];
+
+  state = {
+    screen: 'sites',
+    selectedSiteId: null,
+    activeZoneId: null,
+    activeWallId: null,
+    captureRef: null, // { zoneId, wallId }
+    activeCellId: null,
+    exposureLocked: false,
+    customRows: 2,
+    customCols: 2,
+    sites: [
+      {
+        id: 's1', name: 'Saqqara North Necropolis', location: 'Saqqara, Egypt',
+        kind: 'ready', wallsTotal: 60, lastSynced: '2h ago', updateAvailable: false,
+        zones: [
+          { id: 'z1', name: 'Mastaba A', walls: this.makeWalls('z1', [['North face', 'done', 'Yesterday'], ['South face', 'done', 'Yesterday'], ['East face', 'captured', '2h ago'], ['West face', 'in_progress', '2h ago']]) },
+          { id: 'z2', name: 'Mastaba B', walls: this.makeWalls('z2', [['North face', 'not_started', '—'], ['South face', 'not_started', '—'], ['East face', 'skipped', '3d ago']]) },
+          { id: 'z3', name: 'Causeway', walls: this.makeWalls('z3', [['Segment 1', 'done', '1w ago'], ['Segment 2', 'done', '1w ago']]) },
+          { id: 'z4', name: 'Pyramid Enclosure', walls: this.makeWalls('z4', [['North wall', 'captured', '5h ago'], ['East wall', 'in_progress', '5h ago'], ['South wall', 'not_started', '—']]) },
+        ],
+      },
+      {
+        id: 's2', name: 'Dendera Temple Complex', location: 'Dendera, Egypt',
+        kind: 'ready', wallsTotal: 24, lastSynced: '1d ago', updateAvailable: true,
+        zones: [
+          { id: 'z5', name: 'Hypostyle Hall', walls: this.makeWalls('z5', [['Column row A', 'captured', '1d ago'], ['Column row B', 'in_progress', '1d ago']]) },
+          { id: 'z6', name: 'Sanctuary', walls: this.makeWalls('z6', [['Inner wall', 'not_started', '—'], ['Outer wall', 'not_started', '—']]) },
+        ],
+      },
+      { id: 's3', name: 'Abydos Osireion', location: 'Abydos, Egypt', kind: 'downloading', progress: 35, wallsTotal: 40, zones: [] },
+      { id: 's4', name: 'Luxor West Bank Tombs', location: 'Luxor, Egypt', kind: 'not_downloaded', wallsTotal: 80, zones: [] },
+    ],
+    syncQueue: [
+      { id: 'sy1', name: 'Mastaba A · East face', status: 'uploading', progress: 55 },
+      { id: 'sy2', name: 'Mastaba A · West face', status: 'queued' },
+      { id: 'sy3', name: 'Causeway · Segment 1', status: 'confirmed' },
+      { id: 'sy4', name: 'Hypostyle Hall · Column row A', status: 'failed' },
+    ],
+    unassigned: [
+      { id: 'u1', localId: 'LOCAL-014', photoCount: 6, noteRequired: true },
+      { id: 'u2', localId: 'LOCAL-015', photoCount: 3, noteRequired: false },
+    ],
+  };
+
+  makeWalls(zoneId, defs) {
+    return defs.map((d, i) => {
+      const status = d[1];
+      let grid = null;
+      if (status === 'done' || status === 'captured') {
+        grid = { rows: 2, cols: 2, cells: [1, 1, 1, 1] };
+      } else if (status === 'in_progress') {
+        grid = { rows: 2, cols: 2, cells: [2, 0, 1, 0] };
+      }
+      return { id: zoneId + '-w' + i, name: d[0], status, lastCapture: d[2], grid };
+    });
+  }
+
+  aggregateStatus(walls) {
+    const statuses = walls.map(w => w.status);
+    if (statuses.every(s => s === 'done')) return 'done';
+    if (statuses.every(s => s === 'skipped')) return 'skipped';
+    if (statuses.every(s => s === 'done' || s === 'captured')) return 'captured';
+    if (statuses.some(s => s === 'in_progress' || s === 'captured' || s === 'done')) return 'in_progress';
+    return 'not_started';
+  }
+
+  componentWillUnmount() { clearInterval(this._dl); clearInterval(this._sync); }
+
+  componentDidMount() {
+    this._sync = setInterval(() => {
+      this.setState(s => ({
+        syncQueue: s.syncQueue.map(it => {
+          if (it.status !== 'uploading') return it;
+          const p = it.progress + 8;
+          if (p >= 100) return Object.assign({}, it, { status: 'confirmed', progress: 100 });
+          return Object.assign({}, it, { progress: p });
+        }),
+      }));
+    }, 500);
+  }
+
+  startDownload(id) {
+    this.setState(s => ({ sites: s.sites.map(x => x.id === id ? Object.assign({}, x, { kind: 'downloading', progress: 0 }) : x) }));
+    this._dl = setInterval(() => {
+      this.setState(s => {
+        const sites = s.sites.map(x => {
+          if (x.id !== id || x.kind !== 'downloading') return x;
+          const p = x.progress + 14;
+          if (p >= 100) return Object.assign({}, x, { kind: 'ready', progress: 100, lastSynced: 'just now', updateAvailable: false });
+          return Object.assign({}, x, { progress: p });
+        });
+        const cur = sites.find(x => x.id === id);
+        if (cur && cur.kind === 'ready') clearInterval(this._dl);
+        return { sites };
+      });
+    }, 350);
+  }
+
+  findWall(zoneId, wallId) {
+    for (const site of this.state.sites) {
+      for (const zone of site.zones) {
+        if (zone.id !== zoneId) continue;
+        const wall = zone.walls.find(w => w.id === wallId);
+        if (wall) return wall;
+      }
+    }
+    return null;
+  }
+
+  updateWall(zoneId, wallId, patch) {
+    this.setState(s => ({
+      sites: s.sites.map(site => Object.assign({}, site, {
+        zones: site.zones.map(z => z.id !== zoneId ? z : Object.assign({}, z, {
+          walls: z.walls.map(w => w.id !== wallId ? w : Object.assign({}, w, typeof patch === 'function' ? patch(w) : patch)),
+        })),
+      })),
+    }));
+  }
+
+  createGrid(rows, cols) {
+    const ref = this.state.captureRef;
+    this.updateWall(ref.zoneId, ref.wallId, { grid: { rows, cols, cells: new Array(rows * cols).fill(0) } });
+    this.setState({ screen: 'gridCapture' });
+  }
+
+  renderVals() {
+    const STATUS = this.STATUS;
+    const isOffline = this.props.isOffline ?? true;
+
+    const sites = this.state.sites.map(site => {
+      const isReady = site.kind === 'ready';
+      const wallsTotal = site.zones.length ? site.zones.reduce((n, z) => n + z.walls.length, 0) : site.wallsTotal;
+      const wallsCaptured = isReady ? site.zones.reduce((n, z) => n + z.walls.filter(w => w.status === 'done' || w.status === 'captured').length, 0) : 0;
+      return Object.assign({}, site, {
+        isReady,
+        isDownloading: site.kind === 'downloading',
+        isNotDownloaded: site.kind === 'not_started' || site.kind === 'not_downloaded',
+        wallsTotal,
+        wallsCaptured,
+        progressWidth: (site.progress || 0) + '%',
+        onOpen: isReady ? () => this.setState({ screen: 'overview', selectedSiteId: site.id }) : () => {},
+        onDownload: (e) => { e.stopPropagation(); this.startDownload(site.id); },
+      });
+    });
+
+    const rawSelected = this.state.sites.find(s => s.id === this.state.selectedSiteId);
+    let selectedSite = null;
+    if (rawSelected) {
+      const zones = rawSelected.zones.map(z => {
+        const agg = this.aggregateStatus(z.walls);
+        const m = STATUS[agg];
+        const doneCount = z.walls.filter(w => w.status === 'done' || w.status === 'captured').length;
+        return Object.assign({}, z, {
+          color: m.color, bg: m.bg, border: m.border, icon: m.icon, label: m.label,
+          progressLabel: doneCount + '/' + z.walls.length + ' walls',
+          onOpen: () => this.setState({ activeZoneId: z.id }),
+          walls: z.walls.map(w => {
+            const wm = STATUS[w.status];
+            return Object.assign({}, w, { color: wm.color, bg: wm.bg, icon: wm.icon, label: wm.label, onSelect: () => this.setState({ activeWallId: w.id }) });
+          }),
+        });
+      });
+      const wallsCaptured = zones.reduce((n, z) => n + z.walls.filter(w => w.status === 'done' || w.status === 'captured').length, 0);
+      const wallsTotal = zones.reduce((n, z) => n + z.walls.length, 0);
+      selectedSite = Object.assign({}, rawSelected, { zones, wallsCaptured, wallsTotal });
+    }
+
+    const activeZone = selectedSite ? selectedSite.zones.find(z => z.id === this.state.activeZoneId) : null;
+    const activeWallRaw = activeZone ? activeZone.walls.find(w => w.id === this.state.activeWallId) : null;
+    let activeWall = null;
+    if (activeWallRaw) {
+      activeWall = Object.assign({}, activeWallRaw, {
+        captureLabel: activeWallRaw.grid ? 'Add more photos' : 'Start capture',
+        onCapture: () => {
+          const ref = { zoneId: activeZone.id, wallId: activeWallRaw.id };
+          if (activeWallRaw.grid) {
+            this.setState({ captureRef: ref, screen: 'gridCapture' });
+          } else {
+            this.setState({ captureRef: ref, screen: 'gridInit', customRows: 2, customCols: 2 });
+          }
+        },
+      });
+    }
+
+    // capture context (grid init / grid capture / camera / coverage)
+    const ref = this.state.captureRef;
+    const captureWall = ref ? this.findWall(ref.zoneId, ref.wallId) : null;
+    const grid = captureWall ? captureWall.grid : null;
+
+    let gridCells = [];
+    let gridTemplateColumns = '1fr 1fr';
+    let gridCoverageLabel = '';
+    let coverageIncomplete = false;
+    if (grid) {
+      gridTemplateColumns = 'repeat(' + grid.cols + ', 1fr)';
+      const filled = grid.cells.filter(c => c > 0).length;
+      gridCoverageLabel = filled + '/' + grid.cells.length + ' cells covered';
+      coverageIncomplete = filled < grid.cells.length;
+      gridCells = grid.cells.map((count, i) => {
+        const row = Math.floor(i / grid.cols) + 1, col = (i % grid.cols) + 1;
+        const hasPhotos = count > 0;
+        const isSelected = this.state.activeCellId === i;
+        return {
+          index: i, label: 'R' + row + 'C' + col, photoCount: count, hasPhotos, isEmpty: !hasPhotos,
+          bg: isSelected ? '#DBEAFE' : (hasPhotos ? '#F1F5FF' : '#F9FAFB'),
+          border: isSelected ? '#1D4ED8' : (hasPhotos ? '#93C5FD' : '#E5E7EB'),
+          textColor: hasPhotos ? '#1D4ED8' : '#9CA3AF',
+          reviewIcon: hasPhotos ? 'check_circle' : 'radio_button_unchecked',
+          onOpen: () => this.setState({ screen: 'camera', activeCellId: i }),
+        };
+      });
+    }
+
+    const activeCell = grid ? grid.cells[this.state.activeCellId] : undefined;
+    const activeCellThumbs = activeCell ? new Array(activeCell).fill(0).map((_, i) => ({ id: i, onDelete: (e) => { e.stopPropagation(); } })) : [];
+
+    const gridPresets = this.GRID_PRESETS.map(p => ({
+      label: p.label, cellCount: p.rows * p.cols,
+      bg: '#fff', border: '#E5E7EB',
+      onPick: () => this.createGrid(p.rows, p.cols),
+    }));
+
+    const customCellCount = this.state.customRows * this.state.customCols;
+
+    const syncMeta = {
+      queued: { color: '#6B7280', bg: '#F1F2F4', icon: 'schedule', label: 'Queued' },
+      uploading: { color: '#1D4ED8', bg: '#DBEAFE', icon: 'cloud_upload', label: 'Uploading' },
+      confirmed: { color: '#059669', bg: '#D1FAE5', icon: 'check_circle', label: 'Confirmed' },
+      failed: { color: '#B91C1C', bg: '#FEE2E2', icon: 'error', label: 'Failed' },
+    };
+    const syncItems = this.state.syncQueue.map(it => {
+      const m = syncMeta[it.status];
+      return Object.assign({}, it, {
+        color: m.color, bg: m.bg, icon: m.icon, label: m.label,
+        isUploading: it.status === 'uploading', isFailed: it.status === 'failed',
+        progressWidth: (it.progress || 0) + '%',
+        onRetry: () => this.setState(s => ({ syncQueue: s.syncQueue.map(x => x.id === it.id ? Object.assign({}, x, { status: 'uploading', progress: 10 }) : x) })),
+      });
+    });
+
+    return {
+      isOffline,
+      isSitesScreen: this.state.screen === 'sites',
+      isOverviewScreen: this.state.screen === 'overview',
+      isGridInitScreen: this.state.screen === 'gridInit',
+      isGridCaptureScreen: this.state.screen === 'gridCapture',
+      isCameraScreen: this.state.screen === 'camera',
+      isCoverageScreen: this.state.screen === 'coverage',
+      isSyncScreen: this.state.screen === 'sync',
+      isUnassignedScreen: this.state.screen === 'unassigned',
+      sites,
+      readyCount: sites.filter(s => s.isReady).length,
+      totalCount: sites.length,
+      selectedSite,
+      hasActiveZone: !!activeZone,
+      activeZone,
+      hasActiveWall: !!activeWall,
+      activeWall,
+      legend: Object.values(STATUS).map(m => ({ color: m.color, label: m.label })),
+      goBack: () => this.setState({ screen: 'sites', selectedSiteId: null, activeZoneId: null, activeWallId: null }),
+      closeSheet: () => this.setState({ activeZoneId: null, activeWallId: null }),
+      closeWallSheet: () => this.setState({ activeWallId: null }),
+      backToOverview: () => this.setState({ screen: 'overview', captureRef: null, activeWallId: null }),
+      backToSites: () => this.setState({ screen: 'sites' }),
+      openSync: () => this.setState({ screen: 'sync' }),
+      openUnassigned: () => this.setState({ screen: 'unassigned' }),
+
+      captureWallName: captureWall ? captureWall.name : '',
+      gridPresets, customRows: this.state.customRows, customCols: this.state.customCols, customCellCount,
+      incRows: () => this.setState(s => ({ customRows: Math.min(10, s.customRows + 1) })),
+      decRows: () => this.setState(s => ({ customRows: Math.max(1, s.customRows - 1) })),
+      incCols: () => this.setState(s => ({ customCols: Math.min(10, s.customCols + 1) })),
+      decCols: () => this.setState(s => ({ customCols: Math.max(1, s.customCols - 1) })),
+      useCustomGrid: () => this.createGrid(this.state.customRows, this.state.customCols),
+
+      gridCells, gridTemplateColumns, gridCoverageLabel, coverageIncomplete,
+      reviewButtonBg: grid && grid.cells.some(c => c > 0) ? '#1D4ED8' : '#E5E7EB',
+      reviewButtonColor: grid && grid.cells.some(c => c > 0) ? '#fff' : '#9CA3AF',
+      goToCoverageReview: () => { if (grid && grid.cells.some(c => c > 0)) this.setState({ screen: 'coverage' }); },
+      backToGridCapture: () => this.setState({ screen: 'gridCapture' }),
+
+      activeCellLabel: gridCells[this.state.activeCellId] ? gridCells[this.state.activeCellId].label : '',
+      activeCellThumbs,
+      exposureLockColor: this.state.exposureLocked ? '#FCD34D' : '#fff',
+      toggleExposureLock: () => this.setState(s => ({ exposureLocked: !s.exposureLocked })),
+      takePhoto: () => {
+        const cellIdx = this.state.activeCellId;
+        this.updateWall(ref.zoneId, ref.wallId, (w) => {
+          const cells = w.grid.cells.slice();
+          cells[cellIdx] = cells[cellIdx] + 1;
+          return { grid: Object.assign({}, w.grid, { cells }) };
+        });
+      },
+
+      saveButtonBg: coverageIncomplete ? '#E5E7EB' : '#1D4ED8',
+      saveButtonColor: coverageIncomplete ? '#9CA3AF' : '#fff',
+      saveFull: () => {
+        if (coverageIncomplete || !ref) return;
+        this.updateWall(ref.zoneId, ref.wallId, { status: 'captured', lastCapture: 'just now' });
+        this.setState({ screen: 'overview', captureRef: null, activeWallId: null });
+      },
+      savePartial: () => {
+        if (!ref) return;
+        const anyPhotos = grid.cells.some(c => c > 0);
+        this.updateWall(ref.zoneId, ref.wallId, { status: coverageIncomplete ? (anyPhotos ? 'in_progress' : 'not_started') : 'captured', lastCapture: 'just now' });
+        this.setState({ screen: 'overview', captureRef: null, activeWallId: null });
+      },
+
+      syncItems,
+      unassignedWalls: this.state.unassigned,
+    };
+  }
+}
+
+</script>
+</body>
+</html>

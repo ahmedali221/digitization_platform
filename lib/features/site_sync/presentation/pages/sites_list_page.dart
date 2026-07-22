@@ -1,0 +1,170 @@
+import 'package:flutter/material.dart';
+import 'package:flutter_bloc/flutter_bloc.dart';
+import 'package:get_it/get_it.dart';
+import 'package:go_router/go_router.dart';
+
+import '../../../../core/domain/repositories/site_repository.dart';
+import '../../../../core/theme/app_colors.dart';
+import '../../../../core/theme/app_spacing.dart';
+import '../../../../core/widgets/circle_icon_button.dart';
+import '../../../../core/widgets/feedback_states.dart';
+import '../../../../core/widgets/offline_banner.dart';
+import '../cubit/sites_cubit.dart';
+import '../cubit/sites_state.dart';
+import '../widgets/site_card.dart';
+
+/// The app's initial/home route (`/sites`). Its own `Scaffold` is the only
+/// app-level chrome this screen has — no bottom nav bar here.
+class SitesListPage extends StatelessWidget {
+  const SitesListPage({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    return BlocProvider(
+      create: (_) => SitesCubit(GetIt.instance<SiteRepository>()),
+      child: const Scaffold(body: SafeArea(child: _SitesListBody())),
+    );
+  }
+}
+
+class _SitesListBody extends StatelessWidget {
+  const _SitesListBody();
+
+  @override
+  Widget build(BuildContext context) {
+    return BlocBuilder<SitesCubit, SitesState>(
+      builder: (context, state) {
+        final isOffline = state is SitesLoaded && state.isOffline;
+        return CustomScrollView(
+          slivers: [
+            SliverToBoxAdapter(child: _Header(isOffline: isOffline)),
+            if (isOffline) const SliverToBoxAdapter(child: OfflineBanner()),
+            ..._contentSlivers(context, state),
+          ],
+        );
+      },
+    );
+  }
+
+  List<Widget> _contentSlivers(BuildContext context, SitesState state) {
+    switch (state) {
+      case SitesLoading():
+        return const [
+          SliverFillRemaining(hasScrollBody: false, child: LoadingIndicator()),
+        ];
+      case SitesError(:final message):
+        return [
+          SliverFillRemaining(
+            hasScrollBody: false,
+            child: ErrorRetryView(
+              message: message,
+              onRetry: () => context.read<SitesCubit>().retry(),
+            ),
+          ),
+        ];
+      case SitesLoaded(:final sites):
+        if (sites.isEmpty) {
+          return const [
+            SliverFillRemaining(
+              hasScrollBody: false,
+              child: EmptyState(
+                icon: Icons.location_on_outlined,
+                message:
+                    'No sites yet — prepare a site from the web dashboard to get started',
+              ),
+            ),
+          ];
+        }
+        return [
+          SliverToBoxAdapter(child: _ReadyCountLabel(state: state)),
+          SliverPadding(
+            padding: const EdgeInsets.fromLTRB(
+              AppSpacing.lg,
+              AppSpacing.md,
+              AppSpacing.lg,
+              AppSpacing.xl,
+            ),
+            sliver: SliverList(
+              delegate: SliverChildBuilderDelegate((context, index) {
+                if (index.isOdd) return const SizedBox(height: AppSpacing.md);
+                final site = sites[index ~/ 2];
+                return SiteCard(
+                  site: site,
+                  onOpen: site.isReady
+                      ? () => context.push('/sites/${site.id}/buildings')
+                      : () {},
+                  onDownload: () =>
+                      context.read<SitesCubit>().startDownload(site.id),
+                );
+              }, childCount: sites.length * 2 - 1),
+            ),
+          ),
+        ];
+    }
+  }
+}
+
+class _Header extends StatelessWidget {
+  const _Header({required this.isOffline});
+
+  final bool isOffline;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(
+        AppSpacing.lg + AppSpacing.xs,
+        AppSpacing.lg + AppSpacing.xs,
+        AppSpacing.lg + AppSpacing.xs,
+        AppSpacing.md,
+      ),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        children: [
+          Text('Sites', style: Theme.of(context).textTheme.titleLarge),
+          Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              CircleIconButton(
+                icon: Icons.sync,
+                onTap: () => context.push('/sync'),
+              ),
+              CircleIconButton(
+                icon: Icons.assignment,
+                onTap: () => context.push('/unassigned'),
+              ),
+              if (isOffline) ...[
+                const SizedBox(width: AppSpacing.xs),
+                const OfflinePill(),
+              ],
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _ReadyCountLabel extends StatelessWidget {
+  const _ReadyCountLabel({required this.state});
+
+  final SitesLoaded state;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(
+        AppSpacing.lg,
+        AppSpacing.lg,
+        AppSpacing.lg,
+        AppSpacing.xs,
+      ),
+      child: Text(
+        '${state.readyCount} of ${state.totalCount} sites ready for field',
+        style: Theme.of(
+          context,
+        ).textTheme.bodyMedium?.copyWith(color: AppColors.onSurfaceMuted),
+      ),
+    );
+  }
+}
