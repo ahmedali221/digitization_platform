@@ -15,6 +15,7 @@ import '../../data/datasources/grid_capture_local_data_source.dart';
 import '../../domain/repositories/grid_capture_repository.dart';
 import '../cubit/capture_session_cubit.dart';
 import '../cubit/capture_session_state.dart';
+import '../widgets/camera_grid_navigator.dart';
 import '../widgets/grid_capture_metrics.dart';
 
 class CameraCapturePage extends StatelessWidget {
@@ -218,6 +219,12 @@ class _CameraBodyState extends State<_CameraBody> {
               ),
             ],
           ),
+        ),
+        CameraGridNavigator(
+          grid: grid,
+          activeCellIndex: activeCellId,
+          enabled: !_capturing,
+          onCellSelected: context.read<CaptureSessionCubit>().openCell,
         ),
         _ThumbnailStrip(shotPaths: shotPaths),
         Padding(

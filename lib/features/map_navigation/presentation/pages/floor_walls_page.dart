@@ -294,6 +294,7 @@ class _WallLayoutDiagram extends StatelessWidget {
         id: _roomOutlineId,
         color: AppColors.outlineSubtle,
         rect: _roomRect,
+        selectable: false,
       ),
       for (var i = 0; i < walls.length; i++)
         CanvasLine(
@@ -316,6 +317,7 @@ class _WallLayoutDiagram extends StatelessWidget {
             canvasSize: _canvasSize,
             shapes: shapes,
             interactive: false,
+            fullscreenTitle: 'Walls map',
             onShapeTap: (id) {
               if (id == _roomOutlineId) return;
               onWallTap(walls.firstWhere((w) => w.id == id));

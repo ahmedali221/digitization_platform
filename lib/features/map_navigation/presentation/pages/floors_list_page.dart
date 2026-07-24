@@ -237,6 +237,7 @@ class _FloorCanvas extends StatelessWidget {
             canvasSize: canvasSize,
             shapes: shapes,
             dimmedShapeIds: dimmedFloorIds,
+            fullscreenTitle: 'Floors map',
             onShapeTap: (id) =>
                 onFloorTap(floors.firstWhere((f) => f.id == id)),
           ),

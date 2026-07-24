@@ -152,6 +152,7 @@ class _BuildingCanvas extends StatelessWidget {
           child: ShapeCanvas(
             canvasSize: canvasSize,
             shapes: shapes,
+            fullscreenTitle: 'Buildings map',
             onShapeTap: (id) => onBuildingTap(
               buildings.firstWhere((building) => building.id == id),
             ),

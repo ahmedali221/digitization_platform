@@ -3,6 +3,8 @@ import 'dart:math' as math;
 import 'package:flutter/material.dart';
 
 import '../../../../core/domain/entities/canvas_shape.dart';
+import '../../../../core/theme/app_colors.dart';
+import '../../../../core/theme/app_spacing.dart';
 
 typedef ShapeTapCallback = void Function(String shapeId);
 
@@ -11,11 +13,17 @@ typedef ShapeTapCallback = void Function(String shapeId);
 /// separate from the domain shapes in `core/domain/entities/canvas_shape.dart`
 /// — those are pure geometry, this is a presentation-layer view model.
 sealed class CanvasShape {
-  const CanvasShape({required this.id, required this.color, this.label});
+  const CanvasShape({
+    required this.id,
+    required this.color,
+    this.label,
+    this.selectable = true,
+  });
 
   final String id;
   final Color color;
   final String? label;
+  final bool selectable;
 }
 
 class CanvasRect extends CanvasShape {
@@ -23,6 +31,7 @@ class CanvasRect extends CanvasShape {
     required super.id,
     required super.color,
     super.label,
+    super.selectable,
     required this.rect,
   });
 
@@ -34,6 +43,7 @@ class CanvasLine extends CanvasShape {
     required super.id,
     required super.color,
     super.label,
+    super.selectable,
     required this.line,
   });
 
@@ -55,6 +65,9 @@ class ShapeCanvas extends StatefulWidget {
     required this.onShapeTap,
     this.dimmedShapeIds = const {},
     this.interactive = true,
+    this.fullscreenTitle = 'Map',
+    this.allowFullscreen = true,
+    this.showZoomControls = false,
   });
 
   final CanvasSize canvasSize;
@@ -62,14 +75,30 @@ class ShapeCanvas extends StatefulWidget {
   final ShapeTapCallback onShapeTap;
   final Set<String> dimmedShapeIds;
   final bool interactive;
+  final String fullscreenTitle;
+  final bool allowFullscreen;
+  final bool showZoomControls;
 
   @override
   State<ShapeCanvas> createState() => _ShapeCanvasState();
 }
 
 class _ShapeCanvasState extends State<ShapeCanvas> {
+  static const _minScale = 0.1;
+  static const _maxScale = 8.0;
+  static const _fitPadding = AppSpacing.lg;
+
   final TransformationController _controller = TransformationController();
-  bool _fitted = false;
+  Size? _fittedViewport;
+  Size _viewportSize = Size.zero;
+
+  @override
+  void didUpdateWidget(covariant ShapeCanvas oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.canvasSize != widget.canvasSize) {
+      _fittedViewport = null;
+    }
+  }
 
   @override
   void dispose() {
@@ -78,20 +107,65 @@ class _ShapeCanvasState extends State<ShapeCanvas> {
   }
 
   void _fitToViewport(BoxConstraints constraints) {
-    if (_fitted ||
-        widget.canvasSize.width == 0 ||
-        widget.canvasSize.height == 0) {
+    if (widget.canvasSize.width == 0 || widget.canvasSize.height == 0) {
       return;
     }
+
+    final viewport = Size(constraints.maxWidth, constraints.maxHeight);
+    if (!viewport.width.isFinite ||
+        !viewport.height.isFinite ||
+        viewport.isEmpty) {
+      return;
+    }
+
+    final availableWidth = math.max(0.0, viewport.width - (_fitPadding * 2));
+    final availableHeight = math.max(0.0, viewport.height - (_fitPadding * 2));
     final scale = math
         .min(
-          constraints.maxWidth / widget.canvasSize.width,
-          constraints.maxHeight / widget.canvasSize.height,
+          availableWidth / widget.canvasSize.width,
+          availableHeight / widget.canvasSize.height,
         )
-        .clamp(0.1, 1.0);
+        .clamp(_minScale, 1.0);
+    final left = (viewport.width - (widget.canvasSize.width * scale)) / 2;
+    final top = (viewport.height - (widget.canvasSize.height * scale)) / 2;
     _controller.value = Matrix4.identity()
+      ..translateByDouble(left, top, 0, 1)
       ..scaleByDouble(scale, scale, scale, 1);
-    _fitted = true;
+    _fittedViewport = viewport;
+  }
+
+  void _zoomBy(double factor) {
+    if (_viewportSize.isEmpty) return;
+
+    final currentScale = _controller.value.getMaxScaleOnAxis();
+    final targetScale = (currentScale * factor).clamp(_minScale, _maxScale);
+    if ((targetScale - currentScale).abs() < 0.001) return;
+
+    final viewportCenter = Offset(
+      _viewportSize.width / 2,
+      _viewportSize.height / 2,
+    );
+    final sceneCenter = _controller.toScene(viewportCenter);
+    _controller.value = Matrix4.identity()
+      ..translateByDouble(viewportCenter.dx, viewportCenter.dy, 0, 1)
+      ..scaleByDouble(targetScale, targetScale, targetScale, 1)
+      ..translateByDouble(-sceneCenter.dx, -sceneCenter.dy, 0, 1);
+  }
+
+  Future<void> _openFullscreen() async {
+    final selectedShapeId = await Navigator.of(context).push<String>(
+      MaterialPageRoute(
+        fullscreenDialog: true,
+        builder: (_) => _FullscreenShapeCanvasPage(
+          title: widget.fullscreenTitle,
+          canvasSize: widget.canvasSize,
+          shapes: widget.shapes,
+          dimmedShapeIds: widget.dimmedShapeIds,
+        ),
+      ),
+    );
+    if (!mounted || selectedShapeId == null) return;
+    widget.onShapeTap(selectedShapeId);
   }
 
   void _handleTap(Offset localPosition) {
@@ -102,6 +176,7 @@ class _ShapeCanvasState extends State<ShapeCanvas> {
   @override
   Widget build(BuildContext context) {
     final content = GestureDetector(
+      key: const ValueKey('shape-map-content'),
       behavior: HitTestBehavior.opaque,
       onTapUp: (details) => _handleTap(details.localPosition),
       child: SizedBox(
@@ -116,26 +191,164 @@ class _ShapeCanvasState extends State<ShapeCanvas> {
       ),
     );
 
-    if (!widget.interactive) {
-      return FittedBox(fit: BoxFit.contain, child: content);
-    }
-
     return LayoutBuilder(
       builder: (context, constraints) {
-        if (!_fitted) {
-          WidgetsBinding.instance.addPostFrameCallback(
-            (_) => _fitToViewport(constraints),
-          );
+        final viewport = Size(constraints.maxWidth, constraints.maxHeight);
+        _viewportSize = viewport;
+
+        if (widget.interactive && _fittedViewport != viewport) {
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            if (mounted && _viewportSize == viewport) {
+              _fitToViewport(constraints);
+            }
+          });
         }
-        return InteractiveViewer(
-          transformationController: _controller,
-          constrained: false,
-          minScale: 0.15,
-          maxScale: 4,
-          boundaryMargin: const EdgeInsets.all(120),
-          child: content,
+
+        final map = widget.interactive
+            ? InteractiveViewer(
+                transformationController: _controller,
+                constrained: false,
+                alignment: Alignment.topLeft,
+                minScale: _minScale,
+                maxScale: _maxScale,
+                boundaryMargin: const EdgeInsets.all(160),
+                child: content,
+              )
+            : FittedBox(fit: BoxFit.contain, child: content);
+
+        return Stack(
+          fit: StackFit.expand,
+          children: [
+            map,
+            if (widget.allowFullscreen)
+              Positioned(
+                top: AppSpacing.sm,
+                right: AppSpacing.sm,
+                child: _MapControlButton(
+                  key: const ValueKey('shape-map-expand-button'),
+                  icon: Icons.fullscreen,
+                  tooltip: 'Open full screen map',
+                  onPressed: _openFullscreen,
+                ),
+              ),
+            if (widget.showZoomControls && widget.interactive)
+              Positioned(
+                right: AppSpacing.md,
+                bottom: AppSpacing.md,
+                child: Row(
+                  children: [
+                    _MapControlButton(
+                      key: const ValueKey('shape-map-zoom-out-button'),
+                      icon: Icons.remove,
+                      tooltip: 'Zoom out',
+                      onPressed: () => _zoomBy(0.75),
+                    ),
+                    const SizedBox(width: AppSpacing.sm),
+                    _MapControlButton(
+                      key: const ValueKey('shape-map-fit-button'),
+                      icon: Icons.fit_screen,
+                      tooltip: 'Fit map to screen',
+                      onPressed: () => _fitToViewport(constraints),
+                    ),
+                    const SizedBox(width: AppSpacing.sm),
+                    _MapControlButton(
+                      key: const ValueKey('shape-map-zoom-in-button'),
+                      icon: Icons.add,
+                      tooltip: 'Zoom in',
+                      onPressed: () => _zoomBy(1.35),
+                    ),
+                  ],
+                ),
+              ),
+          ],
         );
       },
+    );
+  }
+}
+
+class _FullscreenShapeCanvasPage extends StatelessWidget {
+  const _FullscreenShapeCanvasPage({
+    required this.title,
+    required this.canvasSize,
+    required this.shapes,
+    required this.dimmedShapeIds,
+  });
+
+  final String title;
+  final CanvasSize canvasSize;
+  final List<CanvasShape> shapes;
+  final Set<String> dimmedShapeIds;
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(title: Text(title)),
+      body: SafeArea(
+        child: Column(
+          children: [
+            Expanded(
+              child: ColoredBox(
+                color: AppColors.surfaceNeutral,
+                child: ShapeCanvas(
+                  canvasSize: canvasSize,
+                  shapes: shapes,
+                  dimmedShapeIds: dimmedShapeIds,
+                  fullscreenTitle: title,
+                  allowFullscreen: false,
+                  showZoomControls: true,
+                  onShapeTap: (id) => Navigator.of(context).pop(id),
+                ),
+              ),
+            ),
+            Container(
+              width: double.infinity,
+              color: Theme.of(context).colorScheme.surface,
+              padding: const EdgeInsets.fromLTRB(
+                AppSpacing.lg,
+                AppSpacing.md,
+                AppSpacing.lg,
+                AppSpacing.lg,
+              ),
+              child: Text(
+                'Pinch or use the zoom controls, then tap an item to select it.',
+                textAlign: TextAlign.center,
+                style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                  color: AppColors.onSurfaceMuted,
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _MapControlButton extends StatelessWidget {
+  const _MapControlButton({
+    super.key,
+    required this.icon,
+    required this.tooltip,
+    required this.onPressed,
+  });
+
+  final IconData icon;
+  final String tooltip;
+  final VoidCallback onPressed;
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: Theme.of(context).colorScheme.surface.withValues(alpha: 0.94),
+      elevation: 2,
+      borderRadius: BorderRadius.circular(AppRadius.chip),
+      child: IconButton(
+        tooltip: tooltip,
+        onPressed: onPressed,
+        icon: Icon(icon),
+        color: AppColors.textSecondaryIcon,
+      ),
     );
   }
 }
@@ -145,9 +358,11 @@ class _ShapeCanvasState extends State<ShapeCanvas> {
 /// shape wins).
 String? _hitTestShapes(List<CanvasShape> shapes, Offset point) {
   for (final shape in shapes.reversed) {
+    if (!shape.selectable) continue;
     if (shape is CanvasLine && shape.line.isNear(point)) return shape.id;
   }
   for (final shape in shapes.reversed) {
+    if (!shape.selectable) continue;
     if (shape is CanvasRect && shape.rect.contains(point)) return shape.id;
   }
   return null;
