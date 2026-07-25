@@ -60,10 +60,6 @@ void setupDependencies() {
   GetIt.instance.registerLazySingleton<Dio>(
     () => buildApiClient(GetIt.instance<AuthInterceptor>()),
   );
-  // A second, plain Dio with no base URL/auth header — package/floor/image
-  // downloads are signed absolute URLs from the dashboard's file storage,
-  // not `/api/...` calls.
-  GetIt.instance.registerLazySingleton<Dio>(() => Dio(), instanceName: 'raw');
 
   GetIt.instance.registerLazySingleton<AuthRemoteDataSource>(
     () => AuthRemoteDataSource(GetIt.instance<Dio>()),
@@ -85,9 +81,9 @@ void setupDependencies() {
     () => SiteDownloadService(
       remote: GetIt.instance<SiteRemoteDataSource>(),
       local: GetIt.instance<SiteLocalDataSource>(),
-      downloader: FileDownloader(GetIt.instance<Dio>(instanceName: 'raw')),
+      downloader: FileDownloader(GetIt.instance<Dio>()),
       directoryManager: GetIt.instance<DirectoryManager>(),
-      rawDio: GetIt.instance<Dio>(instanceName: 'raw'),
+      dio: GetIt.instance<Dio>(),
     ),
   );
   GetIt.instance.registerLazySingleton<SiteRepository>(

@@ -31,12 +31,12 @@ class SiteDownloadService {
     required SiteLocalDataSource local,
     required FileDownloader downloader,
     required DirectoryManager directoryManager,
-    required Dio rawDio,
+    required Dio dio,
   }) : _remote = remote,
        _local = local,
        _downloader = downloader,
        _directoryManager = directoryManager,
-       _rawDio = rawDio;
+       _dio = dio;
 
   final SiteRemoteDataSource _remote;
   final SiteLocalDataSource _local;
@@ -44,9 +44,12 @@ class SiteDownloadService {
   final DirectoryManager _directoryManager;
 
   /// Package/floor/image URLs from `GET /sites/{id}/package` are
-  /// signed/direct absolute URLs, not `/api/...` paths — a plain Dio
-  /// instance (no auth header, no api base URL) fetches them directly.
-  final Dio _rawDio;
+  /// authenticated `/api/...` proxy endpoints (not direct storage
+  /// links — see SitePackagePublisher::resolveFileUrls on the dashboard),
+  /// so the same authenticated client the rest of the app uses fetches
+  /// them; passing an absolute URL here overrides Dio's base URL, so this
+  /// works whether the manifest returns a relative or absolute path.
+  final Dio _dio;
 
   Future<DownloadEstimate> estimate(String siteId) async {
     final bundle = await _fetchBundle(siteId);
@@ -186,7 +189,7 @@ class SiteDownloadService {
   }
 
   Future<List<int>> _getBytes(String url) async {
-    final response = await _rawDio.get<List<int>>(
+    final response = await _dio.get<List<int>>(
       url,
       options: Options(responseType: ResponseType.bytes),
     );
@@ -195,7 +198,7 @@ class SiteDownloadService {
 
   Future<int> _probeSize(String url) async {
     try {
-      final response = await _rawDio.head(url);
+      final response = await _dio.head(url);
       final contentLength = response.headers.value(
         Headers.contentLengthHeader,
       );
