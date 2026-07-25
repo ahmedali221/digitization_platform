@@ -1,6 +1,7 @@
 import 'package:get_it/get_it.dart';
 import 'package:go_router/go_router.dart';
 
+import '../../features/auth/presentation/pages/login_page.dart';
 import '../../features/grid_capture/presentation/pages/camera_capture_page.dart';
 import '../../features/grid_capture/presentation/pages/coverage_review_page.dart';
 import '../../features/grid_capture/presentation/pages/grid_capture_page.dart';
@@ -14,10 +15,20 @@ import '../../features/site_sync/presentation/pages/sites_list_page.dart';
 import '../../features/sync_queue/presentation/pages/sync_queue_page.dart';
 import '../../features/unassigned_walls/presentation/pages/unassigned_walls_page.dart';
 import '../domain/repositories/site_repository.dart';
+import '../network/session_notifier.dart';
 
 final GoRouter appRouter = GoRouter(
   initialLocation: '/sites',
+  refreshListenable: isLoggedInNotifier,
+  redirect: (context, state) {
+    final loggedIn = isLoggedInNotifier.value;
+    final loggingIn = state.matchedLocation == '/login';
+    if (!loggedIn && !loggingIn) return '/login';
+    if (loggedIn && loggingIn) return '/sites';
+    return null;
+  },
   routes: [
+    GoRoute(path: '/login', builder: (context, state) => const LoginPage()),
     GoRoute(path: '/sites', builder: (context, state) => const SitesListPage()),
     GoRoute(
       path: '/sites/:siteId/buildings',

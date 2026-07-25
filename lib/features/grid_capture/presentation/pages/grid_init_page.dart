@@ -99,6 +99,43 @@ class _GridInitForm extends StatelessWidget {
   final String floorId;
   final String wallId;
 
+  /// Storage watchdog (FLUTTER_MOBILE_PLAN.md Phase 7): warns but proceeds
+  /// on [StorageCheckResult.low], blocks entirely on
+  /// [StorageCheckResult.critical] rather than letting a session start that
+  /// can't hold its own photos.
+  Future<void> _startGrid(
+    BuildContext context,
+    CaptureSessionCubit cubit,
+    int cellCount,
+    VoidCallback createGrid,
+  ) async {
+    final result = await cubit.checkStorageForNewSession(cellCount);
+    if (!context.mounted) return;
+
+    if (result == StorageCheckResult.critical) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+            'Not enough free storage to start this capture. Free up space and try again.',
+          ),
+        ),
+      );
+      return;
+    }
+    if (result == StorageCheckResult.low) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Storage is running low — consider freeing up space soon.'),
+        ),
+      );
+    }
+
+    createGrid();
+    context.push(
+      '/sites/$siteId/buildings/$buildingId/floors/$floorId/walls/$wallId/grid-capture',
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final cubit = context.read<CaptureSessionCubit>();
@@ -121,12 +158,12 @@ class _GridInitForm extends StatelessWidget {
             GridPresetRow(
               label: preset.label,
               cellCount: preset.rows * preset.cols,
-              onTap: () {
-                cubit.pickPreset(preset.rows, preset.cols);
-                context.push(
-                  '/sites/$siteId/buildings/$buildingId/floors/$floorId/walls/$wallId/grid-capture',
-                );
-              },
+              onTap: () => _startGrid(
+                context,
+                cubit,
+                preset.rows * preset.cols,
+                () => cubit.pickPreset(preset.rows, preset.cols),
+              ),
             ),
             const SizedBox(height: GridCaptureMetrics.gap),
           ],
@@ -168,12 +205,12 @@ class _GridInitForm extends StatelessWidget {
                 const SizedBox(height: AppSpacing.lg),
                 PrimaryActionButton(
                   label: 'Use custom grid',
-                  onTap: () {
-                    cubit.useCustomGrid();
-                    context.push(
-                      '/sites/$siteId/buildings/$buildingId/floors/$floorId/walls/$wallId/grid-capture',
-                    );
-                  },
+                  onTap: () => _startGrid(
+                    context,
+                    cubit,
+                    state.customCellCount,
+                    cubit.useCustomGrid,
+                  ),
                 ),
               ],
             ),

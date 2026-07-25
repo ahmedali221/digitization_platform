@@ -68,6 +68,26 @@ class FakeSiteRepository implements SiteRepository {
   }
 
   @override
+  Future<void> refreshCatalog() async {}
+
+  @override
+  Future<({int fileCount, int totalBytes})> estimateDownload(
+    String siteId,
+  ) async {
+    final site = findSite(siteId);
+    final wallCount = site?.wallsTotal ?? 0;
+    // Rough placeholder for demo/fake data only — the real implementation
+    // (SiteRepositoryImpl) computes this from actual file sizes.
+    return (fileCount: wallCount * 4 + 2, totalBytes: wallCount * 6 * 1024 * 1024);
+  }
+
+  @override
+  Future<void> deleteCachedSite(String siteId) async {
+    _sites = _sites.where((s) => s.id != siteId).toList();
+    _controller.add(_sites);
+  }
+
+  @override
   Future<void> startDownload(String siteId) async {
     _mutateSite(
       siteId,

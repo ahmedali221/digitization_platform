@@ -19,7 +19,21 @@ abstract class SiteRepository {
 
   WallEntity? findWall(String floorId, String wallId);
 
+  /// Pre-download size summary ("Karnak: 47 files, 132 MB — download?"),
+  /// computed without writing anything to disk.
+  Future<({int fileCount, int totalBytes})> estimateDownload(String siteId);
+
   Future<void> startDownload(String siteId);
+
+  /// Refreshes the site catalog from the dashboard (`GET /sites`) so newly
+  /// published sites and version/status changes show up. A no-op failure
+  /// when offline — callers already have whatever was last cached.
+  Future<void> refreshCatalog();
+
+  /// Removes a downloaded site's local records and package directory.
+  /// Callers are responsible for the "blocked if unsynced sessions exist"
+  /// check (against the sync queue) before calling this.
+  Future<void> deleteCachedSite(String siteId);
 
   /// Applies [update] to the wall and pushes the mutated tree to
   /// [watchSites]'s listeners.

@@ -22,6 +22,12 @@ class SitesLoaded extends SitesState {
   int get readyCount => sites.where((site) => site.isReady).length;
   int get totalCount => sites.length;
 
+  SitesLoaded copyWith({List<SiteEntity>? sites, bool? isOffline}) =>
+      SitesLoaded(
+        sites: sites ?? this.sites,
+        isOffline: isOffline ?? this.isOffline,
+      );
+
   @override
   List<Object?> get props => [sites, isOffline];
 }

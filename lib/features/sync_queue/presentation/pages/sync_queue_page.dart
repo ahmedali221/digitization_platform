@@ -8,6 +8,7 @@ import '../../../../core/utils/navigation_extensions.dart';
 import '../../../../core/widgets/circle_icon_button.dart';
 import '../../../../core/widgets/feedback_states.dart';
 import '../../domain/repositories/sync_queue_repository.dart';
+import '../../domain/services/sync_queue_runner.dart';
 import '../cubit/sync_queue_cubit.dart';
 import '../cubit/sync_queue_state.dart';
 import '../widgets/sync_queue_item_tile.dart';
@@ -18,7 +19,10 @@ class SyncQueuePage extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return BlocProvider(
-      create: (_) => SyncQueueCubit(sl<SyncQueueRepository>()),
+      create: (_) => SyncQueueCubit(
+        sl<SyncQueueRepository>(),
+        sl<SyncQueueRunner>(),
+      ),
       child: const _SyncQueueView(),
     );
   }
@@ -92,12 +96,21 @@ class _SyncQueueHeader extends StatelessWidget {
             onTap: () => context.safePop(),
           ),
           const SizedBox(width: AppSpacing.sm),
-          Text(
-            'Sync queue',
-            style: Theme.of(context).textTheme.titleLarge?.copyWith(
-              fontSize: 20,
-              color: AppColors.textPrimary,
+          Expanded(
+            child: Text(
+              'Sync queue',
+              style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                fontSize: 20,
+                color: AppColors.textPrimary,
+              ),
             ),
+          ),
+          CircleIconButton(
+            icon: Icons.sync,
+            visualDiameter: 40,
+            iconSize: 20,
+            color: AppColors.textPrimary,
+            onTap: () => context.read<SyncQueueCubit>().syncNow(),
           ),
         ],
       ),

@@ -3,14 +3,17 @@ import 'dart:async';
 import 'package:flutter_bloc/flutter_bloc.dart';
 
 import '../../domain/repositories/sync_queue_repository.dart';
+import '../../domain/services/sync_queue_runner.dart';
 import 'sync_queue_state.dart';
 
 class SyncQueueCubit extends Cubit<SyncQueueState> {
-  SyncQueueCubit(this._repository) : super(const SyncQueueLoading()) {
+  SyncQueueCubit(this._repository, this._runner)
+    : super(const SyncQueueLoading()) {
     _subscribe();
   }
 
   final SyncQueueRepository _repository;
+  final SyncQueueRunner _runner;
   StreamSubscription? _subscription;
 
   void _subscribe() {
@@ -21,8 +24,14 @@ class SyncQueueCubit extends Cubit<SyncQueueState> {
     );
   }
 
-  /// Re-enqueues a failed item; the repository's ticker picks it back up.
-  void retry(String id) => _repository.retry(id);
+  /// Re-queues a failed item, then immediately attempts to drain it.
+  void retry(String id) {
+    _repository.retry(id);
+    unawaited(_runner.drainOne(id));
+  }
+
+  /// Manual "Sync now" — drains every queued/failed-and-retried item.
+  Future<void> syncNow() => _runner.drainAll();
 
   /// Re-subscribes to [SyncQueueRepository.watchQueue] after a load error.
   void reload() {

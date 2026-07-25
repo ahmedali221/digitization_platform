@@ -99,6 +99,9 @@ class CaptureSessionCubit extends Cubit<CaptureSessionState> {
     return value;
   }
 
+  Future<StorageCheckResult> checkStorageForNewSession(int cellCount) =>
+      _repository.checkStorageForNewSession(cellCount);
+
   void pickPreset(int rows, int cols) =>
       _repository.createGrid(_floorId, _wallId, rows, cols);
 
@@ -136,15 +139,21 @@ class CaptureSessionCubit extends Cubit<CaptureSessionState> {
     final col = cellId % grid.cols + 1;
     final shotNumber = grid.cells[cellId].photoCount + 1;
 
-    final savedPath = await _localDataSource.saveShot(
-      floorId: _floorId,
+    final saved = await _localDataSource.saveShot(
       wallId: _wallId,
       row: row,
       col: col,
       shotNumber: shotNumber,
       capturedFile: capturedFile,
     );
-    _repository.capturePhoto(_floorId, _wallId, cellId, savedPath);
+    _repository.capturePhoto(
+      _floorId,
+      _wallId,
+      cellId,
+      saved.path,
+      sha256: saved.sha256,
+      shot: shotNumber,
+    );
   }
 
   void toggleExposureLock() {

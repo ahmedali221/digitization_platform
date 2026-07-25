@@ -4,6 +4,7 @@ import 'package:get_it/get_it.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../../../core/domain/repositories/site_repository.dart';
+import '../../../../core/network/connectivity_observer.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../../../core/theme/app_spacing.dart';
 import '../../../../core/widgets/circle_icon_button.dart';
@@ -11,6 +12,7 @@ import '../../../../core/widgets/feedback_states.dart';
 import '../../../../core/widgets/offline_banner.dart';
 import '../cubit/sites_cubit.dart';
 import '../cubit/sites_state.dart';
+import '../widgets/download_confirm_dialog.dart';
 import '../widgets/site_card.dart';
 
 /// The app's initial/home route (`/sites`). Its own `Scaffold` is the only
@@ -21,7 +23,10 @@ class SitesListPage extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return BlocProvider(
-      create: (_) => SitesCubit(GetIt.instance<SiteRepository>()),
+      create: (_) => SitesCubit(
+        GetIt.instance<SiteRepository>(),
+        GetIt.instance<ConnectivityObserver>(),
+      ),
       child: const Scaffold(body: SafeArea(child: _SitesListBody())),
     );
   }
@@ -93,13 +98,28 @@ class _SitesListBody extends StatelessWidget {
                   onOpen: site.isReady
                       ? () => context.push('/sites/${site.id}/buildings')
                       : () {},
-                  onDownload: () =>
-                      context.read<SitesCubit>().startDownload(site.id),
+                  onDownload: () => _confirmAndDownload(context, site.id, site.name),
                 );
               }, childCount: sites.length * 2 - 1),
             ),
           ),
         ];
+    }
+  }
+
+  Future<void> _confirmAndDownload(
+    BuildContext context,
+    String siteId,
+    String siteName,
+  ) async {
+    final cubit = context.read<SitesCubit>();
+    final confirmed = await showDownloadConfirmDialog(
+      context: context,
+      siteName: siteName,
+      loadEstimate: () => cubit.estimateDownload(siteId),
+    );
+    if (confirmed == true) {
+      await cubit.startDownload(siteId);
     }
   }
 }
