@@ -202,9 +202,7 @@ class SiteRepositoryImpl implements SiteRepository {
       buildings: site.buildings
           .map(
             (building) => building.copyWithFloors(
-              building.floors
-                  .map((floor) => _withLocalWalls(floor))
-                  .toList(),
+              building.floors.map((floor) => _withLocalWalls(floor)).toList(),
             ),
           )
           .toList(),

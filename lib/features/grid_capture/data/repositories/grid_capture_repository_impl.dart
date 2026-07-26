@@ -177,12 +177,7 @@ class GridCaptureRepositoryImpl implements GridCaptureRepository {
     final session = _sessionLocal.get(wallId);
     if (session == null) return;
     unawaited(
-      _guardedFinalize(
-        session,
-        floorId,
-        wallId,
-        completed: session.isComplete,
-      ),
+      _guardedFinalize(session, floorId, wallId, completed: session.isComplete),
     );
   }
 
@@ -200,7 +195,9 @@ class GridCaptureRepositoryImpl implements GridCaptureRepository {
     try {
       await _finalizeSession(session, floorId, wallId, completed: completed);
     } catch (e) {
-      debugPrint('GridCaptureRepositoryImpl: failed to finalize session for $wallId: $e');
+      debugPrint(
+        'GridCaptureRepositoryImpl: failed to finalize session for $wallId: $e',
+      );
     }
   }
 

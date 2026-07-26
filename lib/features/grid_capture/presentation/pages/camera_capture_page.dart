@@ -258,19 +258,11 @@ class _CameraBodyState extends State<_CameraBody> {
           enabled: !_capturing,
           onCellSelected: context.read<CaptureSessionCubit>().openCell,
         ),
-        _ThumbnailStrip(shotPaths: shotPaths),
-        Padding(
-          padding: const EdgeInsets.fromLTRB(
-            0,
-            AppSpacing.lg,
-            0,
-            GridCaptureMetrics.shutterBottomPadding,
-          ),
-          child: _ShutterButton(
-            onTap: _loadState == _CameraLoadState.ready && !_capturing
-                ? _handleShutter
-                : null,
-          ),
+        _CaptureFooter(
+          shotPaths: shotPaths,
+          onShutter: _loadState == _CameraLoadState.ready && !_capturing
+              ? _handleShutter
+              : null,
         ),
       ],
     );
@@ -302,9 +294,40 @@ class _Viewfinder extends StatelessWidget {
           style: const TextStyle(color: Colors.white),
         ),
       ),
-      _CameraLoadState.ready => AspectRatio(
-        aspectRatio: controller!.value.aspectRatio,
-        child: CameraPreview(controller!),
+      _CameraLoadState.ready => LayoutBuilder(
+        builder: (context, constraints) {
+          final cameraController = controller!;
+          final previewSize = cameraController.value.previewSize;
+          if (previewSize == null) {
+            return CameraPreview(cameraController);
+          }
+
+          final portrait = constraints.maxHeight >= constraints.maxWidth;
+          final previewWidth = portrait
+              ? previewSize.shortestSide
+              : previewSize.longestSide;
+          final previewHeight = portrait
+              ? previewSize.longestSide
+              : previewSize.shortestSide;
+
+          // Fill the whole available viewfinder instead of constraining the
+          // camera to a centered landscape AspectRatio. BoxFit.cover keeps
+          // the sensor image proportional and crops only the overflow, so the
+          // capture surface is larger without stretching/compressing it.
+          return ClipRect(
+            child: SizedBox.expand(
+              key: const ValueKey('camera-viewfinder'),
+              child: FittedBox(
+                fit: BoxFit.cover,
+                child: SizedBox(
+                  width: previewWidth,
+                  height: previewHeight,
+                  child: CameraPreview(cameraController),
+                ),
+              ),
+            ),
+          );
+        },
       ),
     };
   }
@@ -432,24 +455,60 @@ class _ThumbnailStrip extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(
-        horizontal: AppSpacing.lg,
-        vertical: AppSpacing.md,
+    if (shotPaths.isEmpty) return const SizedBox.shrink();
+    return SizedBox(
+      height: 64,
+      child: ListView.separated(
+        scrollDirection: Axis.horizontal,
+        itemCount: shotPaths.length,
+        separatorBuilder: (_, _) => const SizedBox(width: AppSpacing.sm),
+        itemBuilder: (context, index) => _ThumbnailTile(path: shotPaths[index]),
       ),
-      child: shotPaths.isEmpty
-          ? const SizedBox.shrink()
-          : SizedBox(
-              height: 56,
-              child: ListView.separated(
-                scrollDirection: Axis.horizontal,
-                itemCount: shotPaths.length,
-                separatorBuilder: (_, _) =>
-                    const SizedBox(width: AppSpacing.sm),
-                itemBuilder: (context, index) =>
-                    _ThumbnailTile(path: shotPaths[index]),
+    );
+  }
+}
+
+/// Keeps the shutter and captured-image strip in one row so they no longer
+/// consume two full rows below the camera. The reclaimed height belongs to the
+/// live viewfinder, while the thumbnails are slightly larger than before.
+class _CaptureFooter extends StatelessWidget {
+  const _CaptureFooter({required this.shotPaths, required this.onShutter});
+
+  final List<String> shotPaths;
+  final VoidCallback? onShutter;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(
+        AppSpacing.lg,
+        AppSpacing.md,
+        AppSpacing.lg,
+        GridCaptureMetrics.shutterBottomPadding,
+      ),
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          const shutterSize = 72.0;
+          const sideGap = AppSpacing.md;
+          final sideWidth =
+              ((constraints.maxWidth - shutterSize - (sideGap * 2)) / 2)
+                  .clamp(0.0, double.infinity)
+                  .toDouble();
+
+          return Row(
+            children: [
+              SizedBox(
+                width: sideWidth,
+                child: _ThumbnailStrip(shotPaths: shotPaths),
               ),
-            ),
+              const SizedBox(width: sideGap),
+              _ShutterButton(onTap: onShutter),
+              const SizedBox(width: sideGap),
+              SizedBox(width: sideWidth),
+            ],
+          );
+        },
+      ),
     );
   }
 }
@@ -462,8 +521,8 @@ class _ThumbnailTile extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
-      width: 56,
-      height: 56,
+      width: 64,
+      height: 64,
       clipBehavior: Clip.antiAlias,
       decoration: BoxDecoration(
         color: GridCaptureMetrics.cameraThumbBackground,

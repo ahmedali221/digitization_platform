@@ -87,4 +87,64 @@ void main() {
     expect(selectedShapeId, 'building-1');
     expect(find.text('Map'), findsNothing);
   });
+
+  testWidgets('paints CAD primitives beneath selectable navigation shapes', (
+    tester,
+  ) async {
+    String? selectedShapeId;
+    const cadShapes = [
+      CanvasPath(
+        id: 'cad-path',
+        color: Colors.black,
+        points: [Offset(10, 10), Offset(190, 10), Offset(190, 190)],
+        strokeWidth: 2,
+      ),
+      CanvasCircle(
+        id: 'cad-circle',
+        color: Colors.blue,
+        center: Offset(100, 100),
+        radius: 30,
+        strokeWidth: 2,
+      ),
+      CanvasPoint(id: 'cad-point', color: Colors.red, point: Offset(30, 30)),
+      CanvasText(
+        id: 'cad-text',
+        color: Colors.black,
+        point: Offset(40, 40),
+        text: 'Room A',
+        fontSize: 12,
+      ),
+      CanvasRect(
+        id: 'room',
+        color: Colors.green,
+        rect: RectShape(x: 0, y: 0, w: 200, h: 200),
+      ),
+    ];
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: SizedBox(
+            width: 200,
+            height: 200,
+            child: ShapeCanvas(
+              canvasSize: canvasSize,
+              shapes: cadShapes,
+              interactive: false,
+              allowFullscreen: false,
+              onShapeTap: (id) => selectedShapeId = id,
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.pump();
+    await tester.tapAt(
+      tester.getCenter(find.byKey(const ValueKey('shape-map-content'))),
+    );
+    await tester.pump();
+
+    expect(tester.takeException(), isNull);
+    expect(selectedShapeId, 'room');
+  });
 }

@@ -273,11 +273,7 @@ class _WallDetailContent extends StatelessWidget {
       await showDialog<void>(
         context: context,
         builder: (dialogContext) => AlertDialog(
-          icon: const Icon(
-            Icons.check_circle,
-            color: AppColors.seed,
-            size: 40,
-          ),
+          icon: const Icon(Icons.check_circle, color: AppColors.seed, size: 40),
           title: const Text('Upload complete'),
           content: const Text(
             "This wall's photos were uploaded to the dashboard.",

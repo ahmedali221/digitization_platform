@@ -100,8 +100,8 @@ class SiteMapper {
     final raw = floorRecord.raw;
     final floorJson = (raw['floor'] as Map).cast<String, dynamic>();
     final rooms = (raw['rooms'] as List? ?? const []).cast<Map>();
-    final wallStatusIndex =
-        (raw['wall_status_index'] as Map? ?? const {}).cast<String, dynamic>();
+    final wallStatusIndex = (raw['wall_status_index'] as Map? ?? const {})
+        .cast<String, dynamic>();
 
     final walls = rooms
         .expand((room) => (room['walls'] as List? ?? const []).cast<Map>())
@@ -130,8 +130,8 @@ class SiteMapper {
     Map<String, WallStatusRecord> localWallStatus,
   ) {
     final wallId = wallJson['wall_id'].toString();
-    final serverEntry =
-        (wallStatusIndex[wallId] as Map?)?.cast<String, dynamic>();
+    final serverEntry = (wallStatusIndex[wallId] as Map?)
+        ?.cast<String, dynamic>();
     final localRecord = localWallStatus[wallId];
 
     // Local status is the source of truth once it exists (§4) — the

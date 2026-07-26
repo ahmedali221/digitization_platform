@@ -81,3 +81,86 @@ class WallLineShape extends Equatable {
   @override
   List<Object?> get props => [x1, y1, x2, y2];
 }
+
+/// Non-interactive CAD/reference geometry published by the dashboard's floor
+/// canvas. These shapes are painted below the room and wall overlays, matching
+/// the dashboard editor's layer order.
+sealed class CadDrawingShape extends Equatable {
+  const CadDrawingShape({
+    required this.id,
+    required this.colorValue,
+    required this.strokeWidth,
+  });
+
+  final String id;
+
+  /// An opaque ARGB value. Keeping this as an integer avoids coupling the
+  /// domain model to Material while preserving the authored CAD/layer color.
+  final int colorValue;
+  final double strokeWidth;
+
+  @override
+  List<Object?> get props => [id, colorValue, strokeWidth];
+}
+
+class CadPathShape extends CadDrawingShape {
+  const CadPathShape({
+    required super.id,
+    required super.colorValue,
+    required super.strokeWidth,
+    required this.points,
+    this.closed = false,
+  });
+
+  final List<Offset> points;
+  final bool closed;
+
+  @override
+  List<Object?> get props => [...super.props, points, closed];
+}
+
+class CadCircleShape extends CadDrawingShape {
+  const CadCircleShape({
+    required super.id,
+    required super.colorValue,
+    required super.strokeWidth,
+    required this.center,
+    required this.radius,
+  });
+
+  final Offset center;
+  final double radius;
+
+  @override
+  List<Object?> get props => [...super.props, center, radius];
+}
+
+class CadPointShape extends CadDrawingShape {
+  const CadPointShape({
+    required super.id,
+    required super.colorValue,
+    required this.point,
+  }) : super(strokeWidth: 1);
+
+  final Offset point;
+
+  @override
+  List<Object?> get props => [...super.props, point];
+}
+
+class CadTextShape extends CadDrawingShape {
+  const CadTextShape({
+    required super.id,
+    required super.colorValue,
+    required this.point,
+    required this.text,
+    required this.fontSize,
+  }) : super(strokeWidth: 1);
+
+  final Offset point;
+  final String text;
+  final double fontSize;
+
+  @override
+  List<Object?> get props => [...super.props, point, text, fontSize];
+}

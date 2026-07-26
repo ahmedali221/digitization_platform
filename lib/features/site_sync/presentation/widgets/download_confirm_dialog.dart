@@ -13,10 +13,8 @@ Future<bool?> showDownloadConfirmDialog({
 }) {
   return showDialog<bool>(
     context: context,
-    builder: (context) => _DownloadConfirmDialog(
-      siteName: siteName,
-      loadEstimate: loadEstimate,
-    ),
+    builder: (context) =>
+        _DownloadConfirmDialog(siteName: siteName, loadEstimate: loadEstimate),
   );
 }
 

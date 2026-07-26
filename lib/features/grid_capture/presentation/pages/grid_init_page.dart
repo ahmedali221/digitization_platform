@@ -125,7 +125,9 @@ class _GridInitForm extends StatelessWidget {
     if (result == StorageCheckResult.low) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content: Text('Storage is running low — consider freeing up space soon.'),
+          content: Text(
+            'Storage is running low — consider freeing up space soon.',
+          ),
         ),
       );
     }

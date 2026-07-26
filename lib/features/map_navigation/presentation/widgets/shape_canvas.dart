@@ -52,6 +52,62 @@ class CanvasLine extends CanvasShape {
   final WallLineShape line;
 }
 
+class CanvasPath extends CanvasShape {
+  const CanvasPath({
+    required super.id,
+    required super.color,
+    super.selectable = false,
+    required this.points,
+    required this.strokeWidth,
+    this.closed = false,
+  });
+
+  final List<Offset> points;
+  final double strokeWidth;
+  final bool closed;
+}
+
+class CanvasCircle extends CanvasShape {
+  const CanvasCircle({
+    required super.id,
+    required super.color,
+    super.selectable = false,
+    required this.center,
+    required this.radius,
+    required this.strokeWidth,
+  });
+
+  final Offset center;
+  final double radius;
+  final double strokeWidth;
+}
+
+class CanvasPoint extends CanvasShape {
+  const CanvasPoint({
+    required super.id,
+    required super.color,
+    super.selectable = false,
+    required this.point,
+  });
+
+  final Offset point;
+}
+
+class CanvasText extends CanvasShape {
+  const CanvasText({
+    required super.id,
+    required super.color,
+    super.selectable = false,
+    required this.point,
+    required this.text,
+    required this.fontSize,
+  });
+
+  final Offset point;
+  final String text;
+  final double fontSize;
+}
+
 /// Renders any list of [CanvasShape]s on a fixed-size logical canvas
 /// (FLUTTER_MOBILE_PLAN.md §2/§5's `CustomPainter` map renderer), with
 /// pinch-zoom + pan and tap-to-shape hit-testing.
@@ -441,12 +497,115 @@ class _ShapePainter extends CustomPainter {
     for (final shape in shapes) {
       final dimmed = dimmedShapeIds.contains(shape.id);
       switch (shape) {
+        case CanvasPath(
+          :final points,
+          :final color,
+          :final strokeWidth,
+          :final closed,
+        ):
+          _paintPath(canvas, points, color, strokeWidth, closed, dimmed);
+        case CanvasCircle(
+          :final center,
+          :final radius,
+          :final color,
+          :final strokeWidth,
+        ):
+          _paintCircle(canvas, center, radius, color, strokeWidth, dimmed);
+        case CanvasPoint(:final point, :final color):
+          _paintPoint(canvas, point, color, dimmed);
+        case CanvasText(
+          :final point,
+          :final text,
+          :final fontSize,
+          :final color,
+        ):
+          _paintText(canvas, point, text, fontSize, color, dimmed);
         case CanvasRect(:final rect, :final color, :final label):
           _paintRect(canvas, rect, color, label, dimmed);
         case CanvasLine(:final line, :final color):
           _paintLine(canvas, line, color, dimmed);
       }
     }
+  }
+
+  void _paintPath(
+    Canvas canvas,
+    List<Offset> points,
+    Color color,
+    double strokeWidth,
+    bool closed,
+    bool dimmed,
+  ) {
+    if (points.length < 2) return;
+    final opacity = dimmed ? 0.25 : 1.0;
+    final path = Path()..moveTo(points.first.dx, points.first.dy);
+    for (final point in points.skip(1)) {
+      path.lineTo(point.dx, point.dy);
+    }
+    if (closed) {
+      path.close();
+      canvas.drawPath(
+        path,
+        Paint()..color = color.withValues(alpha: 0.13 * opacity),
+      );
+    }
+    canvas.drawPath(
+      path,
+      Paint()
+        ..color = color.withValues(alpha: opacity)
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = strokeWidth
+        ..strokeJoin = StrokeJoin.round
+        ..strokeCap = StrokeCap.round,
+    );
+  }
+
+  void _paintCircle(
+    Canvas canvas,
+    Offset center,
+    double radius,
+    Color color,
+    double strokeWidth,
+    bool dimmed,
+  ) {
+    canvas.drawCircle(
+      center,
+      radius,
+      Paint()
+        ..color = color.withValues(alpha: dimmed ? 0.25 : 1.0)
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = strokeWidth,
+    );
+  }
+
+  void _paintPoint(Canvas canvas, Offset point, Color color, bool dimmed) {
+    canvas.drawCircle(
+      point,
+      3,
+      Paint()..color = color.withValues(alpha: dimmed ? 0.25 : 1.0),
+    );
+  }
+
+  void _paintText(
+    Canvas canvas,
+    Offset point,
+    String text,
+    double fontSize,
+    Color color,
+    bool dimmed,
+  ) {
+    if (text.isEmpty) return;
+    final painter = TextPainter(
+      text: TextSpan(
+        text: text,
+        style: TextStyle(
+          color: color.withValues(alpha: dimmed ? 0.25 : 1.0),
+          fontSize: fontSize,
+        ),
+      ),
+      textDirection: TextDirection.ltr,
+    )..layout();
+    painter.paint(canvas, point);
   }
 
   void _paintRect(

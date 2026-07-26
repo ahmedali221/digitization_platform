@@ -99,7 +99,8 @@ class _SitesListBody extends StatelessWidget {
                   onOpen: site.isReady
                       ? () => context.push('/sites/${site.id}/buildings')
                       : () {},
-                  onDownload: () => _confirmAndDownload(context, site.id, site.name),
+                  onDownload: () =>
+                      _confirmAndDownload(context, site.id, site.name),
                 );
               }, childCount: sites.length * 2 - 1),
             ),

@@ -45,9 +45,8 @@ class SiteLocalDataSource {
 
   Future<void> deleteSite(String siteId) => _sitesBox.delete(siteId);
 
-  List<FloorPackageRecord> floorsForSite(String siteId) => _floorsBox.values
-      .where((f) => f.siteId == siteId)
-      .toList();
+  List<FloorPackageRecord> floorsForSite(String siteId) =>
+      _floorsBox.values.where((f) => f.siteId == siteId).toList();
 
   Future<void> putFloor(FloorPackageRecord record) =>
       _floorsBox.put(record.floorId, record);
@@ -66,8 +65,7 @@ class SiteLocalDataSource {
   Future<void> putIdMapping(IdMappingRecord record) =>
       _idMappingsBox.put(record.localId, record);
 
-  IdMappingRecord? getIdMapping(String localId) =>
-      _idMappingsBox.get(localId);
+  IdMappingRecord? getIdMapping(String localId) => _idMappingsBox.get(localId);
 
   Future<String> addLocalWall({
     required String floorId,

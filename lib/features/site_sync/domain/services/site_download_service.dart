@@ -10,6 +10,7 @@ import '../../../../core/data/models/floor_package_record.dart';
 import '../../../../core/data/models/site_package_record.dart';
 import '../../../../core/network/file_downloader.dart';
 import '../../../../core/storage/directory_manager.dart';
+import '../../../../core/storage/package_asset_name.dart';
 
 /// Pre-download summary shown in the "Karnak: 47 files, 132 MB — download?"
 /// confirm dialog, per FLUTTER_MOBILE_PLAN.md Phase 1.
@@ -94,7 +95,14 @@ class SiteDownloadService {
 
     for (final url in bundle.imageUrls) {
       final fileName = _fileNameForUrl(url);
-      await _downloader.download(url, p.join(imagesDir.path, fileName));
+      // A republished background may keep the same URL and byte length. Force
+      // replacement when refreshing a package so the visible canvas cannot be
+      // left on an older image by the downloader's size-only resume heuristic.
+      await _downloader.download(
+        url,
+        p.join(imagesDir.path, fileName),
+        force: true,
+      );
       tick();
     }
 
@@ -149,7 +157,8 @@ class SiteDownloadService {
       if (url == null) continue;
       final bytes = await _getBytes(url);
       floorJsonBytes[floorId] = bytes;
-      floorJson[floorId] = jsonDecode(utf8.decode(bytes)) as Map<String, dynamic>;
+      floorJson[floorId] =
+          jsonDecode(utf8.decode(bytes)) as Map<String, dynamic>;
     }
 
     final imageUrls = _collectImageUrls(siteJson, floorJson);
@@ -175,7 +184,9 @@ class SiteDownloadService {
       if (value is String && value.isNotEmpty) urls.add(value);
     }
 
-    addIfPresent((siteJson['overview_canvas'] as Map?)?['background_image_url']);
+    addIfPresent(
+      (siteJson['overview_canvas'] as Map?)?['background_image_url'],
+    );
     for (final building in (siteJson['buildings'] as List).cast<Map>()) {
       addIfPresent(
         (building['building_canvas'] as Map?)?['background_image_url'],
@@ -199,9 +210,7 @@ class SiteDownloadService {
   Future<int> _probeSize(String url) async {
     try {
       final response = await _dio.head(url);
-      final contentLength = response.headers.value(
-        Headers.contentLengthHeader,
-      );
+      final contentLength = response.headers.value(Headers.contentLengthHeader);
       return contentLength != null ? int.tryParse(contentLength) ?? 0 : 0;
     } on DioException {
       return 0;
@@ -209,8 +218,7 @@ class SiteDownloadService {
   }
 
   String _fileNameForUrl(String url) {
-    final path = Uri.parse(url).path;
-    return p.basename(path);
+    return packageImageFileName(url);
   }
 }
 

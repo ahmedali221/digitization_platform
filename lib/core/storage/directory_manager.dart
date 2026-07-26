@@ -29,8 +29,7 @@ class DirectoryManager {
     _docsDir ??= await getApplicationDocumentsDirectory();
   }
 
-  Future<Directory> packageDir(String siteId) =>
-      _ensure(['packages', siteId]);
+  Future<Directory> packageDir(String siteId) => _ensure(['packages', siteId]);
 
   Future<Directory> sessionDir(String sessionId) =>
       _ensure(['sessions', sessionId]);
@@ -45,7 +44,11 @@ class DirectoryManager {
   /// (Invariant 1) — this method itself has no opinion on when that is.
   Future<void> deleteBackup(String sessionId) async {
     final dir = Directory(
-      p.join((await getApplicationDocumentsDirectory()).path, 'backup', sessionId),
+      p.join(
+        (await getApplicationDocumentsDirectory()).path,
+        'backup',
+        sessionId,
+      ),
     );
     if (await dir.exists()) {
       await dir.delete(recursive: true);
@@ -54,7 +57,11 @@ class DirectoryManager {
 
   Future<void> deletePackage(String siteId) async {
     final dir = Directory(
-      p.join((await getApplicationDocumentsDirectory()).path, 'packages', siteId),
+      p.join(
+        (await getApplicationDocumentsDirectory()).path,
+        'packages',
+        siteId,
+      ),
     );
     if (await dir.exists()) {
       await dir.delete(recursive: true);

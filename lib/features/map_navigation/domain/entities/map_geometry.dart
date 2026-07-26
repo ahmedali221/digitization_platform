@@ -6,7 +6,10 @@ import '../../../../core/domain/entities/canvas_shape.dart';
 /// canvas, keyed by building id. Null wherever a bundle carries no manually
 /// drawn geometry — callers fall back to `CanvasLayout`'s auto-grid.
 class SiteOverviewGeometry extends Equatable {
-  const SiteOverviewGeometry({required this.canvas, required this.buildingRects});
+  const SiteOverviewGeometry({
+    required this.canvas,
+    required this.buildingRects,
+  });
 
   final CanvasSize canvas;
   final Map<String, RectShape> buildingRects;
@@ -18,7 +21,10 @@ class SiteOverviewGeometry extends Equatable {
 /// Real, dashboard-drawn positions for one building's floors, keyed by
 /// floor id.
 class BuildingFloorsGeometry extends Equatable {
-  const BuildingFloorsGeometry({required this.canvas, required this.floorRects});
+  const BuildingFloorsGeometry({
+    required this.canvas,
+    required this.floorRects,
+  });
 
   final CanvasSize canvas;
   final Map<String, RectShape> floorRects;
@@ -35,14 +41,16 @@ class BuildingFloorsGeometry extends Equatable {
 class FloorRoomsGeometry extends Equatable {
   const FloorRoomsGeometry({
     required this.canvas,
+    required this.cadShapes,
     required this.roomRects,
     required this.wallLines,
   });
 
   final CanvasSize canvas;
+  final List<CadDrawingShape> cadShapes;
   final List<RectShape> roomRects;
   final Map<String, WallLineShape> wallLines;
 
   @override
-  List<Object?> get props => [canvas, roomRects, wallLines];
+  List<Object?> get props => [canvas, cadShapes, roomRects, wallLines];
 }

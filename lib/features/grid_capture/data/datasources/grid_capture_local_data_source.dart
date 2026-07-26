@@ -22,7 +22,7 @@ class GridCaptureLocalDataSource {
   /// Saves the shot, copies it to backup, and returns both the saved path
   /// and its sha256 — the caller (GridCaptureRepositoryImpl) records both
   /// against the session's manifest.
-  Future<({String path, String sha256}) > saveShot({
+  Future<({String path, String sha256})> saveShot({
     required String wallId,
     required int row,
     required int col,

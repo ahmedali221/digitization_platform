@@ -161,7 +161,8 @@ class _BuildingCanvas extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final canvasSize = geometry?.canvas ?? CanvasLayout.sizeFor(buildings.length);
+    final canvasSize =
+        geometry?.canvas ?? CanvasLayout.sizeFor(buildings.length);
     final shapes = <CanvasShape>[
       for (var index = 0; index < buildings.length; index++)
         CanvasRect(

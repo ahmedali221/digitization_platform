@@ -17,9 +17,10 @@ class FileDownloader {
     String url,
     String savePath, {
     void Function(int received, int total)? onProgress,
+    bool force = false,
   }) async {
     final file = File(savePath);
-    if (await file.exists()) {
+    if (!force && await file.exists()) {
       final remoteSize = await _remoteContentLength(url);
       final localSize = await file.length();
       if (remoteSize != null && remoteSize == localSize) {

@@ -19,10 +19,8 @@ class SyncQueuePage extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return BlocProvider(
-      create: (_) => SyncQueueCubit(
-        sl<SyncQueueRepository>(),
-        sl<SyncQueueRunner>(),
-      ),
+      create: (_) =>
+          SyncQueueCubit(sl<SyncQueueRepository>(), sl<SyncQueueRunner>()),
       child: const _SyncQueueView(),
     );
   }

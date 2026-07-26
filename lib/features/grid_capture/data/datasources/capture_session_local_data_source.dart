@@ -15,6 +15,5 @@ class CaptureSessionLocalDataSource {
   Future<void> put(CaptureSessionRecord record) =>
       _box.put(record.wallId, record);
 
-  Stream<void> watch(String wallId) =>
-      _box.watch(key: wallId);
+  Stream<void> watch(String wallId) => _box.watch(key: wallId);
 }

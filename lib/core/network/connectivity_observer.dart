@@ -9,8 +9,8 @@ class ConnectivityObserver {
 
   final Connectivity _connectivity;
 
-  Stream<bool> get onConnectivityChanged => _connectivity.onConnectivityChanged
-      .map(_hasConnection);
+  Stream<bool> get onConnectivityChanged =>
+      _connectivity.onConnectivityChanged.map(_hasConnection);
 
   Future<bool> get isConnected async =>
       _hasConnection(await _connectivity.checkConnectivity());

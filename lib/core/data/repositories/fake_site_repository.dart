@@ -78,7 +78,10 @@ class FakeSiteRepository implements SiteRepository {
     final wallCount = site?.wallsTotal ?? 0;
     // Rough placeholder for demo/fake data only — the real implementation
     // (SiteRepositoryImpl) computes this from actual file sizes.
-    return (fileCount: wallCount * 4 + 2, totalBytes: wallCount * 6 * 1024 * 1024);
+    return (
+      fileCount: wallCount * 4 + 2,
+      totalBytes: wallCount * 6 * 1024 * 1024,
+    );
   }
 
   @override

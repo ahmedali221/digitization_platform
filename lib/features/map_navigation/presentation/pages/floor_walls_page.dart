@@ -115,6 +115,12 @@ class _FloorWallsContent extends StatelessWidget {
           (w) => w.status == WallStatus.done || w.status == WallStatus.captured,
         )
         .length;
+    final hasCanvasArtwork =
+        geometry != null &&
+        (geometry!.cadShapes.isNotEmpty ||
+            geometry!.roomRects.isNotEmpty ||
+            geometry!.wallLines.isNotEmpty ||
+            geometry!.canvas.backgroundImagePath != null);
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -200,7 +206,7 @@ class _FloorWallsContent extends StatelessWidget {
           ),
         ),
         Expanded(
-          child: walls.isEmpty
+          child: walls.isEmpty && !hasCanvasArtwork
               ? EmptyState(
                   icon: Icons.grid_view,
                   message: 'No walls yet for this floor.',
@@ -223,7 +229,18 @@ class _FloorWallsContent extends StatelessWidget {
                         geometry: geometry,
                         onWallTap: (wall) => _openWallDetail(context, wall),
                       ),
-                      const SizedBox(height: AppSpacing.sm),
+                      if (walls.isEmpty)
+                        Padding(
+                          padding: const EdgeInsets.only(bottom: AppSpacing.md),
+                          child: Text(
+                            'Canvas loaded · no mapped walls yet',
+                            style: textTheme.bodyMedium?.copyWith(
+                              color: AppColors.onSurfaceMuted,
+                            ),
+                          ),
+                        )
+                      else
+                        const SizedBox(height: AppSpacing.sm),
                       for (var i = 0; i < walls.length; i++)
                         WallRow(
                           wall: walls[i],
@@ -313,8 +330,8 @@ class _WallLayoutDiagram extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    if (walls.isEmpty) return const SizedBox.shrink();
     final geometry = this.geometry;
+    if (walls.isEmpty && geometry == null) return const SizedBox.shrink();
 
     final CanvasSize canvasSize;
     final double displayHeight;
@@ -324,6 +341,7 @@ class _WallLayoutDiagram extends StatelessWidget {
       canvasSize = geometry.canvas;
       displayHeight = _geometryDisplayHeight;
       shapes = [
+        for (final cadShape in geometry.cadShapes) _canvasShapeForCad(cadShape),
         for (var i = 0; i < geometry.roomRects.length; i++)
           CanvasRect(
             id: '_room_$i',
@@ -382,4 +400,44 @@ class _WallLayoutDiagram extends StatelessWidget {
       ),
     );
   }
+}
+
+CanvasShape _canvasShapeForCad(CadDrawingShape shape) {
+  final color = Color(shape.colorValue);
+  return switch (shape) {
+    CadPathShape(:final id, :final points, :final strokeWidth, :final closed) =>
+      CanvasPath(
+        id: '_cad_$id',
+        color: color,
+        points: points,
+        strokeWidth: strokeWidth,
+        closed: closed,
+      ),
+    CadCircleShape(
+      :final id,
+      :final center,
+      :final radius,
+      :final strokeWidth,
+    ) =>
+      CanvasCircle(
+        id: '_cad_$id',
+        color: color,
+        center: center,
+        radius: radius,
+        strokeWidth: strokeWidth,
+      ),
+    CadPointShape(:final id, :final point) => CanvasPoint(
+      id: '_cad_$id',
+      color: color,
+      point: point,
+    ),
+    CadTextShape(:final id, :final point, :final text, :final fontSize) =>
+      CanvasText(
+        id: '_cad_$id',
+        color: color,
+        point: point,
+        text: text,
+        fontSize: fontSize,
+      ),
+  };
 }
