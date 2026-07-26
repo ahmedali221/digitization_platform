@@ -16,6 +16,8 @@ import '../../../../core/widgets/breadcrumb.dart';
 import '../../../../core/widgets/circle_icon_button.dart';
 import '../../../../core/widgets/feedback_states.dart';
 import '../../../../core/widgets/status_chip.dart';
+import '../../domain/entities/map_geometry.dart';
+import '../../domain/repositories/map_geometry_repository.dart';
 import '../cubit/floors_cubit.dart';
 import '../cubit/floors_state.dart';
 import '../widgets/overview_metrics.dart';
@@ -37,8 +39,12 @@ class FloorsListPage extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return BlocProvider(
-      create: (_) =>
-          FloorsCubit(GetIt.instance<SiteRepository>(), siteId, buildingId),
+      create: (_) => FloorsCubit(
+        GetIt.instance<SiteRepository>(),
+        GetIt.instance<MapGeometryRepository>(),
+        siteId,
+        buildingId,
+      ),
       child: Scaffold(
         body: SafeArea(
           child: BlocBuilder<FloorsCubit, FloorsState>(
@@ -53,8 +59,12 @@ class FloorsListPage extends StatelessWidget {
                   message: message,
                   onRetry: () => context.safePop(),
                 ),
-                FloorsLoaded(:final site, :final building) =>
-                  _FloorsListContent(site: site, building: building),
+                FloorsLoaded(:final site, :final building, :final geometry) =>
+                  _FloorsListContent(
+                    site: site,
+                    building: building,
+                    geometry: geometry,
+                  ),
               };
             },
           ),
@@ -65,10 +75,15 @@ class FloorsListPage extends StatelessWidget {
 }
 
 class _FloorsListContent extends StatefulWidget {
-  const _FloorsListContent({required this.site, required this.building});
+  const _FloorsListContent({
+    required this.site,
+    required this.building,
+    required this.geometry,
+  });
 
   final SiteEntity site;
   final BuildingEntity building;
+  final BuildingFloorsGeometry? geometry;
 
   @override
   State<_FloorsListContent> createState() => _FloorsListContentState();
@@ -177,6 +192,7 @@ class _FloorsListContentState extends State<_FloorsListContent> {
                 )
               : _FloorCanvas(
                   floors: building.floors,
+                  geometry: widget.geometry,
                   dimmedFloorIds: dimmedFloorIds,
                   onFloorTap: (floor) => context.push(
                     '/sites/$siteId/buildings/${building.id}/floors/${floor.id}',
@@ -192,29 +208,34 @@ class _FloorsListContentState extends State<_FloorsListContent> {
 
 /// The Level 1 map: floor shapes laid out and colored by aggregate wall
 /// status, pinch-zoomable and pannable (FLUTTER_MOBILE_PLAN.md §2's canvas
-/// renderer + hit-testing). Positions are auto-laid-out today since no
-/// bundle has shipped designer-placed coordinates yet — see [CanvasLayout].
+/// renderer + hit-testing). Uses the bundle's real dashboard-drawn positions
+/// when [geometry] is available, falling back to CanvasLayout's auto-grid
+/// otherwise.
 class _FloorCanvas extends StatelessWidget {
   const _FloorCanvas({
     required this.floors,
+    required this.geometry,
     required this.dimmedFloorIds,
     required this.onFloorTap,
   });
 
   final List<FloorEntity> floors;
+  final BuildingFloorsGeometry? geometry;
   final Set<String> dimmedFloorIds;
   final ValueChanged<FloorEntity> onFloorTap;
 
   @override
   Widget build(BuildContext context) {
-    final canvasSize = CanvasLayout.sizeFor(floors.length);
+    final canvasSize = geometry?.canvas ?? CanvasLayout.sizeFor(floors.length);
     final shapes = <CanvasShape>[
       for (var i = 0; i < floors.length; i++)
         CanvasRect(
           id: floors[i].id,
           color: floors[i].aggregateStatus.meta.color,
           label: floors[i].name,
-          rect: CanvasLayout.rectFor(i, floors.length),
+          rect:
+              geometry?.floorRects[floors[i].id] ??
+              CanvasLayout.rectFor(i, floors.length),
         ),
     ];
 

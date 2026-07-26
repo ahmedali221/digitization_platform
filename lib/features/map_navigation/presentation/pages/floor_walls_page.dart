@@ -14,6 +14,8 @@ import '../../../../core/utils/navigation_extensions.dart';
 import '../../../../core/widgets/breadcrumb.dart';
 import '../../../../core/widgets/circle_icon_button.dart';
 import '../../../../core/widgets/feedback_states.dart';
+import '../../domain/entities/map_geometry.dart';
+import '../../domain/repositories/map_geometry_repository.dart';
 import '../cubit/floor_walls_cubit.dart';
 import '../cubit/floor_walls_state.dart';
 import '../widgets/overview_metrics.dart';
@@ -40,6 +42,7 @@ class FloorWallsPage extends StatelessWidget {
     return BlocProvider(
       create: (_) => FloorWallsCubit(
         GetIt.instance<SiteRepository>(),
+        GetIt.instance<MapGeometryRepository>(),
         siteId,
         buildingId,
         floorId,
@@ -58,7 +61,12 @@ class FloorWallsPage extends StatelessWidget {
                   message: message,
                   onRetry: () => context.safePop(),
                 ),
-                FloorWallsLoaded(:final site, :final building, :final floor) =>
+                FloorWallsLoaded(
+                  :final site,
+                  :final building,
+                  :final floor,
+                  :final geometry,
+                ) =>
                   _FloorWallsContent(
                     siteId: siteId,
                     siteName: site.name,
@@ -67,6 +75,7 @@ class FloorWallsPage extends StatelessWidget {
                     floorId: floorId,
                     floorName: floor.name,
                     walls: floor.walls,
+                    geometry: geometry,
                   ),
               };
             },
@@ -86,6 +95,7 @@ class _FloorWallsContent extends StatelessWidget {
     required this.floorId,
     required this.floorName,
     required this.walls,
+    required this.geometry,
   });
 
   final String siteId;
@@ -95,6 +105,7 @@ class _FloorWallsContent extends StatelessWidget {
   final String floorId;
   final String floorName;
   final List<WallEntity> walls;
+  final FloorRoomsGeometry? geometry;
 
   @override
   Widget build(BuildContext context) {
@@ -209,6 +220,7 @@ class _FloorWallsContent extends StatelessWidget {
                     children: [
                       _WallLayoutDiagram(
                         walls: walls,
+                        geometry: geometry,
                         onWallTap: (wall) => _openWallDetail(context, wall),
                       ),
                       const SizedBox(height: AppSpacing.sm),
@@ -272,37 +284,79 @@ class _AddWallButton extends StatelessWidget {
   }
 }
 
-/// A small, tappable diagram of the floor's walls arranged around its
-/// perimeter (FLUTTER_MOBILE_PLAN.md §2's hit-testing → wall tap_action,
-/// applied one level down from the site canvas).
+/// A tappable diagram of the floor's walls. Renders the bundle's real
+/// dashboard-drawn rooms/walls (and background image) when [geometry] is
+/// available — a real floor plan, pinch-zoomable like the buildings/floors
+/// canvases above it in the hierarchy. Falls back to one fixed fake room
+/// with walls evenly spaced around it (FLUTTER_MOBILE_PLAN.md §2's
+/// hit-testing → wall tap_action) when it isn't.
 class _WallLayoutDiagram extends StatelessWidget {
-  const _WallLayoutDiagram({required this.walls, required this.onWallTap});
+  const _WallLayoutDiagram({
+    required this.walls,
+    required this.geometry,
+    required this.onWallTap,
+  });
 
   final List<WallEntity> walls;
+  final FloorRoomsGeometry? geometry;
   final ValueChanged<WallEntity> onWallTap;
 
-  static const _canvasSize = CanvasSize(width: 300, height: 160);
-  static const _roomRect = RectShape(x: 16, y: 16, w: 268, h: 128);
+  static const _fallbackCanvasSize = CanvasSize(width: 300, height: 160);
+  static const _fallbackRoomRect = RectShape(x: 16, y: 16, w: 268, h: 128);
   static const _roomOutlineId = '_room_outline';
+
+  /// On-screen preview height once real geometry is in play — bigger than
+  /// the fallback's fixed 160 since a real floor plan carries more detail,
+  /// but still an embedded preview (not full-page) since this diagram sits
+  /// above a scrollable wall list, not alone on its own screen.
+  static const _geometryDisplayHeight = 320.0;
 
   @override
   Widget build(BuildContext context) {
     if (walls.isEmpty) return const SizedBox.shrink();
-    final wallLines = CanvasLayout.wallsAroundRoom(_roomRect, walls.length);
-    final shapes = <CanvasShape>[
-      const CanvasRect(
-        id: _roomOutlineId,
-        color: AppColors.outlineSubtle,
-        rect: _roomRect,
-        selectable: false,
-      ),
-      for (var i = 0; i < walls.length; i++)
-        CanvasLine(
-          id: walls[i].id,
-          color: walls[i].status.meta.color,
-          line: wallLines[i],
+    final geometry = this.geometry;
+
+    final CanvasSize canvasSize;
+    final double displayHeight;
+    final List<CanvasShape> shapes;
+
+    if (geometry != null) {
+      canvasSize = geometry.canvas;
+      displayHeight = _geometryDisplayHeight;
+      shapes = [
+        for (var i = 0; i < geometry.roomRects.length; i++)
+          CanvasRect(
+            id: '_room_$i',
+            color: AppColors.outlineSubtle,
+            rect: geometry.roomRects[i],
+            selectable: false,
+          ),
+        for (final wall in walls)
+          if (geometry.wallLines[wall.id] case final line?)
+            CanvasLine(id: wall.id, color: wall.status.meta.color, line: line),
+      ];
+    } else {
+      canvasSize = _fallbackCanvasSize;
+      displayHeight = _fallbackCanvasSize.height;
+      final wallLines = CanvasLayout.wallsAroundRoom(
+        _fallbackRoomRect,
+        walls.length,
+      );
+      shapes = [
+        const CanvasRect(
+          id: _roomOutlineId,
+          color: AppColors.outlineSubtle,
+          rect: _fallbackRoomRect,
+          selectable: false,
         ),
-    ];
+        for (var i = 0; i < walls.length; i++)
+          CanvasLine(
+            id: walls[i].id,
+            color: walls[i].status.meta.color,
+            line: wallLines[i],
+          ),
+      ];
+    }
 
     return Padding(
       padding: const EdgeInsets.only(bottom: AppSpacing.md),
@@ -311,17 +365,18 @@ class _WallLayoutDiagram extends StatelessWidget {
           color: AppColors.surfaceNeutral,
           borderRadius: BorderRadius.circular(AppRadius.card),
         ),
-        child: SizedBox(
-          height: _canvasSize.height,
-          child: ShapeCanvas(
-            canvasSize: _canvasSize,
-            shapes: shapes,
-            interactive: false,
-            fullscreenTitle: 'Walls map',
-            onShapeTap: (id) {
-              if (id == _roomOutlineId) return;
-              onWallTap(walls.firstWhere((w) => w.id == id));
-            },
+        child: ClipRRect(
+          borderRadius: BorderRadius.circular(AppRadius.card),
+          child: SizedBox(
+            height: displayHeight,
+            child: ShapeCanvas(
+              canvasSize: canvasSize,
+              shapes: shapes,
+              interactive: geometry != null,
+              fullscreenTitle: 'Walls map',
+              onShapeTap: (id) =>
+                  onWallTap(walls.firstWhere((w) => w.id == id)),
+            ),
           ),
         ),
       ),

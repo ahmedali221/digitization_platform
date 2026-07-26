@@ -8,6 +8,8 @@ import '../../features/grid_capture/data/datasources/capture_session_local_data_
 import '../../features/grid_capture/data/datasources/grid_capture_local_data_source.dart';
 import '../../features/grid_capture/data/repositories/grid_capture_repository_impl.dart';
 import '../../features/grid_capture/domain/repositories/grid_capture_repository.dart';
+import '../../features/map_navigation/data/repositories/map_geometry_repository_impl.dart';
+import '../../features/map_navigation/domain/repositories/map_geometry_repository.dart';
 import '../../features/site_sync/domain/services/site_download_service.dart';
 import '../../features/sync_queue/data/datasources/sync_queue_local_data_source.dart';
 import '../../features/sync_queue/data/datasources/sync_remote_data_source.dart';
@@ -91,6 +93,12 @@ void setupDependencies() {
       local: GetIt.instance<SiteLocalDataSource>(),
       remote: GetIt.instance<SiteRemoteDataSource>(),
       downloadService: GetIt.instance<SiteDownloadService>(),
+      directoryManager: GetIt.instance<DirectoryManager>(),
+    ),
+  );
+  GetIt.instance.registerLazySingleton<MapGeometryRepository>(
+    () => MapGeometryRepositoryImpl(
+      local: GetIt.instance<SiteLocalDataSource>(),
       directoryManager: GetIt.instance<DirectoryManager>(),
     ),
   );

@@ -2,6 +2,7 @@ import 'package:equatable/equatable.dart';
 
 import '../../../../core/domain/entities/building.dart';
 import '../../../../core/domain/entities/site.dart';
+import '../../domain/entities/map_geometry.dart';
 
 /// States for [FloorsListPage] — the four feedback states required by
 /// DESIGN_SYSTEM.md §8 (loading/empty/error/content). "Empty" here is a
@@ -19,13 +20,17 @@ class FloorsLoading extends FloorsState {
 }
 
 class FloorsLoaded extends FloorsState {
-  const FloorsLoaded(this.site, this.building);
+  const FloorsLoaded(this.site, this.building, this.geometry);
 
   final SiteEntity site;
   final BuildingEntity building;
 
+  /// Real dashboard-drawn floor positions, or null to fall back to
+  /// `CanvasLayout`'s auto-grid.
+  final BuildingFloorsGeometry? geometry;
+
   @override
-  List<Object?> get props => [site, building];
+  List<Object?> get props => [site, building, geometry];
 }
 
 /// The requested site/building pair doesn't resolve in the repository.

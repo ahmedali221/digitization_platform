@@ -10,15 +10,18 @@ class CanvasSize extends Equatable {
   const CanvasSize({
     required this.width,
     required this.height,
-    this.backgroundImageUrl,
+    this.backgroundImagePath,
   });
 
   final double width;
   final double height;
-  final String? backgroundImageUrl;
+
+  /// A resolved local file path — never a URL — set only once the image has
+  /// actually been downloaded to disk (see `MapGeometryMapper`).
+  final String? backgroundImagePath;
 
   @override
-  List<Object?> get props => [width, height, backgroundImageUrl];
+  List<Object?> get props => [width, height, backgroundImagePath];
 }
 
 /// A tappable rectangle in canvas coordinates — a building, floor, or room

@@ -4,6 +4,7 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 
 import '../../../../core/domain/entities/site.dart';
 import '../../../../core/domain/repositories/site_repository.dart';
+import '../../domain/repositories/map_geometry_repository.dart';
 import 'floor_walls_state.dart';
 
 /// Watches the repository's site tree and derives the [siteId] building and
@@ -12,6 +13,7 @@ import 'floor_walls_state.dart';
 class FloorWallsCubit extends Cubit<FloorWallsState> {
   FloorWallsCubit(
     this._repository,
+    this._geometryRepository,
     this._siteId,
     this._buildingId,
     this._floorId,
@@ -23,6 +25,7 @@ class FloorWallsCubit extends Cubit<FloorWallsState> {
   }
 
   final SiteRepository _repository;
+  final MapGeometryRepository _geometryRepository;
   final String _siteId;
   final String _buildingId;
   final String _floorId;
@@ -35,7 +38,14 @@ class FloorWallsCubit extends Cubit<FloorWallsState> {
         if (building.id != _buildingId) continue;
         for (final floor in building.floors) {
           if (floor.id == _floorId) {
-            emit(FloorWallsLoaded(site, building, floor));
+            emit(
+              FloorWallsLoaded(
+                site,
+                building,
+                floor,
+                _geometryRepository.roomsGeometryFor(_siteId, _floorId),
+              ),
+            );
             return;
           }
         }

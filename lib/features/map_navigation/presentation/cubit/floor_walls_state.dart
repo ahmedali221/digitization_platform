@@ -3,6 +3,7 @@ import 'package:equatable/equatable.dart';
 import '../../../../core/domain/entities/building.dart';
 import '../../../../core/domain/entities/floor.dart';
 import '../../../../core/domain/entities/site.dart';
+import '../../domain/entities/map_geometry.dart';
 
 /// States for [FloorWallsPage] — the walls belonging to one floor, plus the
 /// parent site and building needed by the hierarchy breadcrumb.
@@ -18,14 +19,18 @@ class FloorWallsLoading extends FloorWallsState {
 }
 
 class FloorWallsLoaded extends FloorWallsState {
-  const FloorWallsLoaded(this.site, this.building, this.floor);
+  const FloorWallsLoaded(this.site, this.building, this.floor, this.geometry);
 
   final SiteEntity site;
   final BuildingEntity building;
   final FloorEntity floor;
 
+  /// Real dashboard-drawn room/wall positions, or null to fall back to the
+  /// fixed fake room + `CanvasLayout.wallsAroundRoom()`.
+  final FloorRoomsGeometry? geometry;
+
   @override
-  List<Object?> get props => [site, building, floor];
+  List<Object?> get props => [site, building, floor, geometry];
 }
 
 /// The requested site/building/floor path doesn't resolve in the repository.

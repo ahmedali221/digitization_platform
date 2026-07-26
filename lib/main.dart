@@ -4,6 +4,7 @@ import 'package:hive_flutter/hive_flutter.dart';
 import 'app.dart';
 import 'core/background/sync_background_task.dart';
 import 'core/di/injection_container.dart';
+import 'core/storage/directory_manager.dart';
 import 'core/storage/hive_boxes.dart';
 
 Future<void> main() async {
@@ -11,6 +12,7 @@ Future<void> main() async {
   await Hive.initFlutter();
   await registerAdaptersAndOpenBoxes();
   setupDependencies();
+  await sl<DirectoryManager>().init();
   await seedInitialSession();
   wireForegroundSyncOnReconnect();
   await initializeSyncBackgroundTask();

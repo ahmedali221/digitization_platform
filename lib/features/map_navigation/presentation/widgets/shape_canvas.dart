@@ -1,4 +1,6 @@
+import 'dart:io';
 import 'dart:math' as math;
+import 'dart:ui' as ui;
 
 import 'package:flutter/material.dart';
 
@@ -91,6 +93,13 @@ class _ShapeCanvasState extends State<ShapeCanvas> {
   final TransformationController _controller = TransformationController();
   Size? _fittedViewport;
   Size _viewportSize = Size.zero;
+  ui.Image? _background;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadBackground(widget.canvasSize.backgroundImagePath);
+  }
 
   @override
   void didUpdateWidget(covariant ShapeCanvas oldWidget) {
@@ -98,12 +107,45 @@ class _ShapeCanvasState extends State<ShapeCanvas> {
     if (oldWidget.canvasSize != widget.canvasSize) {
       _fittedViewport = null;
     }
+    if (oldWidget.canvasSize.backgroundImagePath !=
+        widget.canvasSize.backgroundImagePath) {
+      _loadBackground(widget.canvasSize.backgroundImagePath);
+    }
   }
 
   @override
   void dispose() {
     _controller.dispose();
+    _background?.dispose();
     super.dispose();
+  }
+
+  /// Background decode is async — the loaded [ui.Image] is only ever applied
+  /// via [setState], so the painter is guaranteed a repaint once it resolves
+  /// rather than silently never showing the image. A missing or undecodable
+  /// file is caught and simply skipped; the map still renders without it.
+  Future<void> _loadBackground(String? path) async {
+    if (path == null) {
+      final previous = _background;
+      if (previous == null) return;
+      setState(() => _background = null);
+      previous.dispose();
+      return;
+    }
+
+    try {
+      final bytes = await File(path).readAsBytes();
+      final image = await decodeImageFromList(bytes);
+      if (!mounted || widget.canvasSize.backgroundImagePath != path) {
+        image.dispose();
+        return;
+      }
+      final previous = _background;
+      setState(() => _background = image);
+      previous?.dispose();
+    } catch (_) {
+      // Missing/undecodable background file — render without it.
+    }
   }
 
   void _fitToViewport(BoxConstraints constraints) {
@@ -186,6 +228,7 @@ class _ShapeCanvasState extends State<ShapeCanvas> {
           painter: _ShapePainter(
             shapes: widget.shapes,
             dimmedShapeIds: widget.dimmedShapeIds,
+            background: _background,
           ),
         ),
       ),
@@ -369,13 +412,32 @@ String? _hitTestShapes(List<CanvasShape> shapes, Offset point) {
 }
 
 class _ShapePainter extends CustomPainter {
-  _ShapePainter({required this.shapes, required this.dimmedShapeIds});
+  _ShapePainter({
+    required this.shapes,
+    required this.dimmedShapeIds,
+    this.background,
+  });
 
   final List<CanvasShape> shapes;
   final Set<String> dimmedShapeIds;
+  final ui.Image? background;
 
   @override
   void paint(Canvas canvas, Size size) {
+    final background = this.background;
+    if (background != null) {
+      canvas.drawImageRect(
+        background,
+        Rect.fromLTWH(
+          0,
+          0,
+          background.width.toDouble(),
+          background.height.toDouble(),
+        ),
+        Offset.zero & size,
+        Paint(),
+      );
+    }
     for (final shape in shapes) {
       final dimmed = dimmedShapeIds.contains(shape.id);
       switch (shape) {

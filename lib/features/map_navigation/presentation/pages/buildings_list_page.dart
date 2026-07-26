@@ -13,6 +13,8 @@ import '../../../../core/utils/navigation_extensions.dart';
 import '../../../../core/widgets/breadcrumb.dart';
 import '../../../../core/widgets/circle_icon_button.dart';
 import '../../../../core/widgets/feedback_states.dart';
+import '../../domain/entities/map_geometry.dart';
+import '../../domain/repositories/map_geometry_repository.dart';
 import '../cubit/buildings_cubit.dart';
 import '../cubit/buildings_state.dart';
 import '../widgets/overview_metrics.dart';
@@ -28,7 +30,11 @@ class BuildingsListPage extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return BlocProvider(
-      create: (_) => BuildingsCubit(GetIt.instance<SiteRepository>(), siteId),
+      create: (_) => BuildingsCubit(
+        GetIt.instance<SiteRepository>(),
+        GetIt.instance<MapGeometryRepository>(),
+        siteId,
+      ),
       child: Scaffold(
         body: SafeArea(
           child: BlocBuilder<BuildingsCubit, BuildingsState>(
@@ -42,7 +48,7 @@ class BuildingsListPage extends StatelessWidget {
                 message: message,
                 onRetry: () => context.safePop(),
               ),
-              BuildingsLoaded(:final site) => Column(
+              BuildingsLoaded(:final site, :final geometry) => Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Padding(
@@ -100,6 +106,7 @@ class BuildingsListPage extends StatelessWidget {
                           )
                         : _BuildingCanvas(
                             buildings: site.buildings,
+                            geometry: geometry,
                             onBuildingTap: (building) => context.push(
                               '/sites/$siteId/buildings/${building.id}/floors',
                             ),
@@ -116,21 +123,28 @@ class BuildingsListPage extends StatelessWidget {
 }
 
 class _BuildingCanvas extends StatelessWidget {
-  const _BuildingCanvas({required this.buildings, required this.onBuildingTap});
+  const _BuildingCanvas({
+    required this.buildings,
+    required this.geometry,
+    required this.onBuildingTap,
+  });
 
   final List<BuildingEntity> buildings;
+  final SiteOverviewGeometry? geometry;
   final ValueChanged<BuildingEntity> onBuildingTap;
 
   @override
   Widget build(BuildContext context) {
-    final canvasSize = CanvasLayout.sizeFor(buildings.length);
+    final canvasSize = geometry?.canvas ?? CanvasLayout.sizeFor(buildings.length);
     final shapes = <CanvasShape>[
       for (var index = 0; index < buildings.length; index++)
         CanvasRect(
           id: buildings[index].id,
           color: buildings[index].aggregateStatus.meta.color,
           label: buildings[index].name,
-          rect: CanvasLayout.rectFor(index, buildings.length),
+          rect:
+              geometry?.buildingRects[buildings[index].id] ??
+              CanvasLayout.rectFor(index, buildings.length),
         ),
     ];
 

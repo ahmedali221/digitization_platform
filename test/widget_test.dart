@@ -17,6 +17,8 @@ import 'package:digitization_platform/core/domain/repositories/site_repository.d
 import 'package:digitization_platform/core/network/connectivity_observer.dart';
 import 'package:digitization_platform/core/network/session_notifier.dart';
 import 'package:digitization_platform/core/router/app_router.dart';
+import 'package:digitization_platform/features/map_navigation/data/repositories/fake_map_geometry_repository.dart';
+import 'package:digitization_platform/features/map_navigation/domain/repositories/map_geometry_repository.dart';
 import 'package:digitization_platform/features/map_navigation/presentation/widgets/shape_canvas.dart';
 
 void main() {
@@ -29,6 +31,9 @@ void main() {
     );
     GetIt.instance.registerLazySingleton<ConnectivityObserver>(
       () => ConnectivityObserver(),
+    );
+    GetIt.instance.registerLazySingleton<MapGeometryRepository>(
+      () => const FakeMapGeometryRepository(),
     );
     isLoggedInNotifier.value = true;
 

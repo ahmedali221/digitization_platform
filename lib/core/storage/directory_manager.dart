@@ -18,6 +18,16 @@ class DirectoryManager {
     : _diskSpace = diskSpace ?? DiskSpacePlus();
 
   final DiskSpacePlus _diskSpace;
+  Directory? _docsDir;
+
+  /// Resolves and caches the app documents directory once. Callers that only
+  /// ever await a directory method don't need this — but `MapGeometryMapper`
+  /// mirrors `SiteRepository`'s synchronous find*() methods, so it needs the
+  /// docs path already resolved before it can build an image path without an
+  /// `await`. Called once at boot, before the first frame (see `main.dart`).
+  Future<void> init() async {
+    _docsDir ??= await getApplicationDocumentsDirectory();
+  }
 
   Future<Directory> packageDir(String siteId) =>
       _ensure(['packages', siteId]);
@@ -59,8 +69,19 @@ class DirectoryManager {
   Future<bool> hasSufficientSpace(int estimatedBytes) async =>
       await freeSpaceBytes() >= estimatedBytes;
 
+  /// Synchronous counterpart to [packageDir], for an already-downloaded
+  /// site's background image. Returns null before [init] has resolved, or if
+  /// [fileName] isn't actually present under `packages/{siteId}/images/` —
+  /// callers treat either case as "no background image available".
+  String? packageImagePathSync(String siteId, String fileName) {
+    final docsDir = _docsDir;
+    if (docsDir == null) return null;
+    final path = p.join(docsDir.path, 'packages', siteId, 'images', fileName);
+    return File(path).existsSync() ? path : null;
+  }
+
   Future<Directory> _ensure(List<String> segments) async {
-    final docsDir = await getApplicationDocumentsDirectory();
+    final docsDir = _docsDir ??= await getApplicationDocumentsDirectory();
     final dir = Directory(p.joinAll([docsDir.path, ...segments]));
     if (!await dir.exists()) {
       await dir.create(recursive: true);
