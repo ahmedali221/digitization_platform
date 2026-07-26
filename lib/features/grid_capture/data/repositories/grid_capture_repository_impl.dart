@@ -108,7 +108,7 @@ class GridCaptureRepositoryImpl implements GridCaptureRepository {
   }
 
   @override
-  void capturePhoto(
+  WallEntity? capturePhoto(
     String floorId,
     String wallId,
     int cellIndex,
@@ -123,7 +123,7 @@ class GridCaptureRepositoryImpl implements GridCaptureRepository {
       // first shot lazily creates the local session record from the grid
       // dimensions SiteRepository already knows about.
       final grid = _siteRepository.findWall(floorId, wallId)?.grid;
-      if (grid == null) return;
+      if (grid == null) return null;
       final siteId = _siteIdForFloor(floorId);
       session = CaptureSessionRecord(
         sessionId: wallId,
@@ -162,6 +162,7 @@ class GridCaptureRepositoryImpl implements GridCaptureRepository {
     session.state = 'inProgress';
     session.completedAt = null;
     _sessionLocal.put(session);
+    return _overlaySession(_siteRepository.findWall(floorId, wallId));
   }
 
   @override

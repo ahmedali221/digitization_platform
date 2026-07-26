@@ -146,7 +146,7 @@ class CaptureSessionCubit extends Cubit<CaptureSessionState> {
       shotNumber: shotNumber,
       capturedFile: capturedFile,
     );
-    _repository.capturePhoto(
+    final updatedWall = _repository.capturePhoto(
       _floorId,
       _wallId,
       cellId,
@@ -154,6 +154,11 @@ class CaptureSessionCubit extends Cubit<CaptureSessionState> {
       sha256: saved.sha256,
       shot: shotNumber,
     );
+    // watchWall()'s stream only re-emits on changes SiteRepository itself
+    // watches (site/wall-status), which a capture never touches — apply the
+    // new shot to this cubit's own state directly rather than waiting for an
+    // event that will never arrive.
+    if (updatedWall != null) _onWallChanged(updatedWall);
   }
 
   void toggleExposureLock() {

@@ -26,7 +26,12 @@ abstract class GridCaptureRepository {
   /// data source, before this call) — the repository only records it.
   /// [sha256] and [shot] are only meaningful for the real implementation's
   /// sync manifest; the fake ignores them.
-  void capturePhoto(
+  ///
+  /// Returns the wall with the new shot already reflected in its [grid], so
+  /// callers can update their own state directly — [watchWall]'s stream only
+  /// re-emits on changes [SiteRepository] itself watches (site/wall-status),
+  /// which a capture never touches, so it can't be relied on to notice this.
+  WallEntity? capturePhoto(
     String floorId,
     String wallId,
     int cellIndex,
