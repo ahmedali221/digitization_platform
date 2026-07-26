@@ -69,7 +69,12 @@ class CameraCapturePage extends StatelessWidget {
                 icon: Icons.grid_view,
                 message: 'No grid set up yet for this wall.',
               ),
-              CaptureSessionLoaded() => _CameraBody(state: state),
+              CaptureSessionLoaded() => _CameraBody(
+                state: state,
+                siteId: siteId,
+                buildingId: buildingId,
+                floorId: floorId,
+              ),
             },
           ),
         ),
@@ -79,9 +84,17 @@ class CameraCapturePage extends StatelessWidget {
 }
 
 class _CameraBody extends StatefulWidget {
-  const _CameraBody({required this.state});
+  const _CameraBody({
+    required this.state,
+    required this.siteId,
+    required this.buildingId,
+    required this.floorId,
+  });
 
   final CaptureSessionLoaded state;
+  final String siteId;
+  final String buildingId;
+  final String floorId;
 
   @override
   State<_CameraBody> createState() => _CameraBodyState();
@@ -147,6 +160,18 @@ class _CameraBodyState extends State<_CameraBody> {
     }
   }
 
+  /// Saves whatever's been captured so far straight to the wall's grid —
+  /// [CaptureSessionCubit.savePartial] already marks the wall `captured` if
+  /// every cell now has a photo, or `in_progress` otherwise, so one button
+  /// covers both cases without the operator detouring through coverage
+  /// review first.
+  void _handleSave() {
+    context.read<CaptureSessionCubit>().savePartial();
+    context.go(
+      '/sites/${widget.siteId}/buildings/${widget.buildingId}/floors/${widget.floorId}',
+    );
+  }
+
   Future<void> _handleExposureToggle() async {
     final controller = _controller;
     final cubit = context.read<CaptureSessionCubit>();
@@ -197,12 +222,19 @@ class _CameraBodyState extends State<_CameraBody> {
               Positioned(
                 top: AppSpacing.lg,
                 right: AppSpacing.lg,
-                child: _RoundIconButton(
-                  icon: Icons.lock,
-                  iconColor: widget.state.exposureLocked
-                      ? WallStatus.inProgress.meta.border
-                      : Colors.white,
-                  onTap: _handleExposureToggle,
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.end,
+                  children: [
+                    _SaveButton(onTap: _capturing ? null : _handleSave),
+                    const SizedBox(height: AppSpacing.sm),
+                    _RoundIconButton(
+                      icon: Icons.lock,
+                      iconColor: widget.state.exposureLocked
+                          ? WallStatus.inProgress.meta.border
+                          : Colors.white,
+                      onTap: _handleExposureToggle,
+                    ),
+                  ],
                 ),
               ),
               Positioned(
@@ -340,6 +372,52 @@ class _RoundIconButton extends StatelessWidget {
               ),
               child: Icon(icon, size: 20, color: iconColor),
             ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// Persists whatever's been captured so far to the wall's grid, right from
+/// the camera screen — the same action as coverage-review's "Save partial",
+/// just reachable without leaving the capture flow first.
+class _SaveButton extends StatelessWidget {
+  const _SaveButton({required this.onTap});
+
+  final VoidCallback? onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: AppColors.cameraScrim,
+      borderRadius: BorderRadius.circular(AppRadius.chip),
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(AppRadius.chip),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(
+            horizontal: AppSpacing.md,
+            vertical: AppSpacing.xs + 2,
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(
+                Icons.check,
+                size: 18,
+                color: onTap == null ? Colors.white38 : Colors.white,
+              ),
+              const SizedBox(width: 4),
+              Text(
+                'Save',
+                style: TextStyle(
+                  color: onTap == null ? Colors.white38 : Colors.white,
+                  fontWeight: FontWeight.w600,
+                  fontSize: 14,
+                ),
+              ),
+            ],
           ),
         ),
       ),

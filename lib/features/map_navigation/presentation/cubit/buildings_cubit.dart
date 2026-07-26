@@ -36,6 +36,13 @@ class BuildingsCubit extends Cubit<BuildingsState> {
     emit(const BuildingsNotFound());
   }
 
+  /// Re-downloads this site's full package from the dashboard — the same
+  /// operation the sites list's initial "Download" runs, just reachable
+  /// while already browsing the site, so status/capture changes made on the
+  /// dashboard or another device (which browsing the local cache alone can
+  /// never see) get pulled in without deleting and re-downloading by hand.
+  Future<void> refreshFromDashboard() => _repository.startDownload(_siteId);
+
   @override
   Future<void> close() {
     _subscription.cancel();

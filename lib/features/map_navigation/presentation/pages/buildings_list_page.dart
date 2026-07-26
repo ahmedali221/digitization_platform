@@ -79,6 +79,13 @@ class BuildingsListPage extends StatelessWidget {
                             ],
                           ),
                         ),
+                        CircleIconButton(
+                          icon: Icons.refresh,
+                          onTap: () => _refreshFromDashboard(context),
+                          visualDiameter: 40,
+                          iconSize: 22,
+                          color: AppColors.textPrimary,
+                        ),
                       ],
                     ),
                   ),
@@ -119,6 +126,25 @@ class BuildingsListPage extends StatelessWidget {
         ),
       ),
     );
+  }
+}
+
+/// Re-downloads the whole site so status/capture changes made on the
+/// dashboard or another device (invisible to this device's local-only
+/// browsing) get pulled in without the user deleting and re-downloading by
+/// hand.
+Future<void> _refreshFromDashboard(BuildContext context) async {
+  final cubit = context.read<BuildingsCubit>();
+  final messenger = ScaffoldMessenger.of(context);
+  messenger.showSnackBar(
+    const SnackBar(content: Text('Refreshing from dashboard…')),
+  );
+  try {
+    await cubit.refreshFromDashboard();
+    if (!context.mounted) return;
+    messenger.showSnackBar(const SnackBar(content: Text('Refreshed')));
+  } catch (e) {
+    messenger.showSnackBar(SnackBar(content: Text('Refresh failed: $e')));
   }
 }
 

@@ -1,3 +1,7 @@
+import 'dart:io';
+
+import 'package:path/path.dart' as p;
+
 import '../../../../core/errors/failure.dart';
 import '../../../../core/storage/device_id_provider.dart';
 import '../../../../core/storage/directory_manager.dart';
@@ -79,12 +83,15 @@ class SyncQueueRunner {
       ];
       for (var i = 0; i < photos.length; i++) {
         final entry = photos[i];
+        final image = File(entry.photo.file);
         await _remote.uploadCellPhoto(
           wallId: item.wallId,
           row: entry.cell.row,
           col: entry.cell.col,
           shot: entry.photo.shot,
-          filePath: entry.photo.file,
+          openImageBytes: image.openRead,
+          imageLength: await image.length(),
+          fileName: p.basename(image.path),
         );
         item.progress = 20 + (((i + 1) / photos.length) * 70).round();
         await _queueLocal.put(item);

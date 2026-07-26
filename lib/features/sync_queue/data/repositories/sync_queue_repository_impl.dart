@@ -1,6 +1,9 @@
+import 'dart:async';
+
 import '../../domain/entities/sync_item.dart';
 import '../../domain/repositories/sync_enqueuer.dart';
 import '../../domain/repositories/sync_queue_repository.dart';
+import '../../domain/services/sync_queue_runner.dart';
 import '../datasources/sync_queue_local_data_source.dart';
 import '../models/sync_queue_item_record.dart';
 
@@ -10,9 +13,10 @@ import '../models/sync_queue_item_record.dart';
 /// capture round resets its existing queue entry rather than piling up
 /// duplicates.
 class SyncQueueRepositoryImpl implements SyncQueueRepository, SyncEnqueuer {
-  SyncQueueRepositoryImpl(this._local);
+  SyncQueueRepositoryImpl(this._local, this._runner);
 
   final SyncQueueLocalDataSource _local;
+  final SyncQueueRunner _runner;
 
   @override
   Stream<List<SyncItem>> watchQueue() =>
@@ -49,6 +53,12 @@ class SyncQueueRepositoryImpl implements SyncQueueRepository, SyncEnqueuer {
         createdAt: existing?.createdAt ?? DateTime.now(),
       ),
     );
+    // Attempt the upload right away rather than waiting for a reconnect
+    // event, the periodic background task, or a manual "Sync now" tap — a
+    // capture round shouldn't sit purely local until one of those happens to
+    // fire. Fire-and-forget: failures just leave the item queued/failed for
+    // the existing retry paths to pick up.
+    unawaited(_runner.drainOne(wallId));
   }
 
   SyncItem _toEntity(SyncQueueItemRecord record) => SyncItem(

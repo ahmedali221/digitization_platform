@@ -37,7 +37,9 @@ class SyncRemoteDataSource {
                   'row': cell.row,
                   'col': cell.col,
                   'photos': cell.photos
-                      .map((p) => {'file': _fileName(p.file), 'sha256': p.sha256})
+                      .map(
+                        (p) => {'file': _fileName(p.file), 'sha256': p.sha256},
+                      )
                       .toList(),
                 },
               )
@@ -59,7 +61,9 @@ class SyncRemoteDataSource {
     required int row,
     required int col,
     required int shot,
-    required String filePath,
+    required Stream<List<int>> Function() openImageBytes,
+    required int imageLength,
+    required String fileName,
   }) async {
     try {
       await _dio.post(
@@ -68,7 +72,11 @@ class SyncRemoteDataSource {
           'row': row,
           'col': col,
           'shot': shot,
-          'photos[]': await MultipartFile.fromFile(filePath),
+          'photos[]': MultipartFile.fromStream(
+            openImageBytes,
+            imageLength,
+            filename: fileName,
+          ),
         }),
         options: Options(sendTimeout: const Duration(minutes: 5)),
       );

@@ -1,3 +1,5 @@
+import 'dart:io';
+
 import 'package:flutter/material.dart';
 
 import '../../../../core/theme/app_colors.dart';
@@ -10,12 +12,16 @@ enum GridCellMode { capture, review }
 /// One cell tile in the coverage grid, shared between the interactive
 /// grid-capture screen ([GridCellMode.capture], tappable, shows a photo
 /// count) and the read-only coverage-review screen ([GridCellMode.review],
-/// not tappable, shows a covered/empty icon instead).
+/// not tappable, shows a covered/empty icon instead). Shows [thumbnailPath]
+/// as the tile's own background once a cell has a photo, rather than just a
+/// flat "has photos" tint — a missing/undecodable file falls back to that
+/// tint instead of crashing.
 class GridCellTile extends StatelessWidget {
   const GridCellTile({
     super.key,
     required this.label,
     required this.photoCount,
+    this.thumbnailPath,
     this.isSelected = false,
     this.mode = GridCellMode.capture,
     this.onTap,
@@ -23,6 +29,7 @@ class GridCellTile extends StatelessWidget {
 
   final String label;
   final int photoCount;
+  final String? thumbnailPath;
   final bool isSelected;
   final GridCellMode mode;
   final VoidCallback? onTap;
@@ -31,6 +38,7 @@ class GridCellTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final thumbnailPath = this.thumbnailPath;
     final capturedMeta = WallStatus.captured.meta;
     final background = isSelected
         ? capturedMeta.background
@@ -40,27 +48,48 @@ class GridCellTile extends StatelessWidget {
     final border = isSelected
         ? AppColors.seed
         : (_hasPhotos ? capturedMeta.border : AppColors.outlineSubtle);
-    final textColor = _hasPhotos ? AppColors.seed : AppColors.iconMuted;
+    final textColor = thumbnailPath != null
+        ? Colors.white
+        : (_hasPhotos ? AppColors.seed : AppColors.iconMuted);
+
+    final overlay = mode == GridCellMode.capture
+        ? _CaptureContent(
+            label: label,
+            hasPhotos: _hasPhotos,
+            photoCount: photoCount,
+            color: textColor,
+          )
+        : _ReviewContent(label: label, hasPhotos: _hasPhotos, color: textColor);
 
     final content = Container(
+      clipBehavior: Clip.antiAlias,
       decoration: BoxDecoration(
         color: background,
         border: Border.all(color: border, width: 2),
         borderRadius: BorderRadius.circular(AppRadius.card),
       ),
-      child: Center(
-        child: mode == GridCellMode.capture
-            ? _CaptureContent(
-                label: label,
-                hasPhotos: _hasPhotos,
-                photoCount: photoCount,
-                color: textColor,
-              )
-            : _ReviewContent(
-                label: label,
-                hasPhotos: _hasPhotos,
-                color: textColor,
+      child: Stack(
+        fit: StackFit.expand,
+        children: [
+          if (thumbnailPath != null)
+            Image.file(
+              File(thumbnailPath),
+              fit: BoxFit.cover,
+              errorBuilder: (context, error, stackTrace) =>
+                  const SizedBox.shrink(),
+            ),
+          if (thumbnailPath != null)
+            const DecoratedBox(
+              decoration: BoxDecoration(
+                gradient: LinearGradient(
+                  begin: Alignment.topCenter,
+                  end: Alignment.bottomCenter,
+                  colors: [Colors.transparent, Color(0x73000000)],
+                ),
               ),
+            ),
+          Center(child: overlay),
+        ],
       ),
     );
 

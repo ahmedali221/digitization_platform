@@ -210,6 +210,12 @@ class GridCaptureRepositoryImpl implements GridCaptureRepository {
     String wallId, {
     required bool completed,
   }) async {
+    // Self-heals a session created while SiteMapper's site-id resolution
+    // was broken (it read a field the bundle never carries and silently
+    // fell back to ''), which would otherwise 422 forever at sync time.
+    if (session.siteId.isEmpty) {
+      session.siteId = _siteIdForFloor(floorId) ?? session.siteId;
+    }
     session.state = completed ? 'completed' : 'inProgress';
     session.completedAt = completed ? DateTime.now() : null;
     await _sessionLocal.put(session);

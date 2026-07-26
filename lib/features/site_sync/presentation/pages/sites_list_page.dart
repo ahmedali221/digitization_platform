@@ -10,6 +10,7 @@ import '../../../../core/theme/app_spacing.dart';
 import '../../../../core/widgets/circle_icon_button.dart';
 import '../../../../core/widgets/feedback_states.dart';
 import '../../../../core/widgets/offline_banner.dart';
+import '../../../auth/domain/repositories/auth_repository.dart';
 import '../cubit/sites_cubit.dart';
 import '../cubit/sites_state.dart';
 import '../widgets/download_confirm_dialog.dart';
@@ -153,6 +154,10 @@ class _Header extends StatelessWidget {
                 icon: Icons.assignment,
                 onTap: () => context.push('/unassigned'),
               ),
+              CircleIconButton(
+                icon: Icons.logout,
+                onTap: () => _confirmLogout(context),
+              ),
               if (isOffline) ...[
                 const SizedBox(width: AppSpacing.xs),
                 const OfflinePill(),
@@ -162,6 +167,34 @@ class _Header extends StatelessWidget {
         ],
       ),
     );
+  }
+}
+
+/// Clears the stored session token, which flips [isLoggedInNotifier] to
+/// false — the router's own `refreshListenable` on that notifier then
+/// redirects to `/login` on its own, no explicit navigation needed here.
+Future<void> _confirmLogout(BuildContext context) async {
+  final confirmed = await showDialog<bool>(
+    context: context,
+    builder: (dialogContext) => AlertDialog(
+      title: const Text('Log out?'),
+      content: const Text(
+        "You'll need your email and password to sign back in.",
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.of(dialogContext).pop(false),
+          child: const Text('Cancel'),
+        ),
+        TextButton(
+          onPressed: () => Navigator.of(dialogContext).pop(true),
+          child: const Text('Log out'),
+        ),
+      ],
+    ),
+  );
+  if (confirmed == true) {
+    await GetIt.instance<AuthRepository>().logout();
   }
 }
 

@@ -1,3 +1,5 @@
+import 'dart:io';
+
 import 'package:flutter/material.dart';
 
 import '../../../../core/domain/entities/wall.dart';
@@ -112,12 +114,14 @@ class _CameraGridNavigatorState extends State<CameraGridNavigator> {
                 itemBuilder: (context, index) {
                   final row = index ~/ widget.grid.cols + 1;
                   final col = index % widget.grid.cols + 1;
+                  final shotPaths = widget.grid.cells[index].shotPaths;
                   return SizedBox(
                     width: _cellWidth,
                     child: _CameraGridCell(
                       key: ValueKey('camera-grid-cell-$index'),
                       label: 'R${row}C$col',
                       photoCount: widget.grid.cells[index].photoCount,
+                      thumbnailPath: shotPaths.isEmpty ? null : shotPaths.first,
                       isActive: index == widget.activeCellIndex,
                       onTap: widget.enabled
                           ? () => widget.onCellSelected(index)
@@ -139,20 +143,25 @@ class _CameraGridCell extends StatelessWidget {
     super.key,
     required this.label,
     required this.photoCount,
+    this.thumbnailPath,
     required this.isActive,
     required this.onTap,
   });
 
   final String label;
   final int photoCount;
+  final String? thumbnailPath;
   final bool isActive;
   final VoidCallback? onTap;
 
   @override
   Widget build(BuildContext context) {
+    final thumbnailPath = this.thumbnailPath;
     final hasPhotos = photoCount > 0;
     final capturedColor = WallStatus.captured.meta.border;
-    final background = isActive
+    final background = thumbnailPath != null
+        ? Colors.black
+        : isActive
         ? AppColors.seed
         : hasPhotos
         ? capturedColor.withValues(alpha: 0.35)
@@ -171,6 +180,7 @@ class _CameraGridCell extends StatelessWidget {
       child: Material(
         color: background,
         borderRadius: BorderRadius.circular(AppRadius.chip),
+        clipBehavior: Clip.antiAlias,
         child: InkWell(
           onTap: onTap,
           borderRadius: BorderRadius.circular(AppRadius.chip),
@@ -179,34 +189,55 @@ class _CameraGridCell extends StatelessWidget {
               border: Border.all(color: borderColor, width: isActive ? 2 : 1),
               borderRadius: BorderRadius.circular(AppRadius.chip),
             ),
-            child: Column(
-              mainAxisAlignment: MainAxisAlignment.center,
+            child: Stack(
+              fit: StackFit.expand,
               children: [
-                Text(
-                  label,
-                  maxLines: 1,
-                  style: Theme.of(
-                    context,
-                  ).textTheme.labelSmall?.copyWith(color: Colors.white),
-                ),
-                const SizedBox(height: AppSpacing.xs),
-                Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Icon(
-                      hasPhotos ? Icons.photo_camera : Icons.add_a_photo,
-                      size: 15,
-                      color: Colors.white70,
-                    ),
-                    if (hasPhotos) ...[
-                      const SizedBox(width: AppSpacing.xs),
-                      Text(
-                        '$photoCount',
-                        style: Theme.of(
-                          context,
-                        ).textTheme.labelSmall?.copyWith(color: Colors.white),
+                if (thumbnailPath != null)
+                  Image.file(
+                    File(thumbnailPath),
+                    fit: BoxFit.cover,
+                    errorBuilder: (context, error, stackTrace) =>
+                        const SizedBox.shrink(),
+                  ),
+                if (thumbnailPath != null)
+                  const DecoratedBox(
+                    decoration: BoxDecoration(
+                      gradient: LinearGradient(
+                        begin: Alignment.topCenter,
+                        end: Alignment.bottomCenter,
+                        colors: [Colors.transparent, Color(0x8A000000)],
                       ),
-                    ],
+                    ),
+                  ),
+                Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Text(
+                      label,
+                      maxLines: 1,
+                      style: Theme.of(
+                        context,
+                      ).textTheme.labelSmall?.copyWith(color: Colors.white),
+                    ),
+                    const SizedBox(height: AppSpacing.xs),
+                    Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(
+                          hasPhotos ? Icons.photo_camera : Icons.add_a_photo,
+                          size: 15,
+                          color: Colors.white70,
+                        ),
+                        if (hasPhotos) ...[
+                          const SizedBox(width: AppSpacing.xs),
+                          Text(
+                            '$photoCount',
+                            style: Theme.of(context).textTheme.labelSmall
+                                ?.copyWith(color: Colors.white),
+                          ),
+                        ],
+                      ],
+                    ),
                   ],
                 ),
               ],

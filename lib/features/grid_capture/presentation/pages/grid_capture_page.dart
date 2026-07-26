@@ -119,9 +119,11 @@ class _GridCaptureContent extends StatelessWidget {
               itemBuilder: (context, index) {
                 final row = index ~/ grid.cols + 1;
                 final col = index % grid.cols + 1;
+                final shotPaths = grid.cells[index].shotPaths;
                 return GridCellTile(
                   label: 'R${row}C$col',
                   photoCount: grid.cells[index].photoCount,
+                  thumbnailPath: shotPaths.isEmpty ? null : shotPaths.first,
                   isSelected: state.activeCellId == index,
                   onTap: () {
                     context.read<CaptureSessionCubit>().openCell(index);

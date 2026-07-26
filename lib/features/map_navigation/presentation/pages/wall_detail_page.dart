@@ -13,6 +13,8 @@ import '../../../../core/widgets/circle_icon_button.dart';
 import '../../../../core/widgets/feedback_states.dart';
 import '../../../../core/widgets/primary_action_button.dart';
 import '../../../../core/widgets/status_chip.dart';
+import '../../../grid_capture/domain/repositories/grid_capture_repository.dart';
+import '../../../sync_queue/domain/repositories/sync_queue_repository.dart';
 import '../cubit/wall_detail_cubit.dart';
 import '../cubit/wall_detail_state.dart';
 import '../widgets/overview_metrics.dart';
@@ -39,6 +41,8 @@ class WallDetailPage extends StatelessWidget {
     return BlocProvider(
       create: (_) => WallDetailCubit(
         GetIt.instance<SiteRepository>(),
+        GetIt.instance<GridCaptureRepository>(),
+        GetIt.instance<SyncQueueRepository>(),
         siteId,
         buildingId,
         floorId,
@@ -230,6 +234,14 @@ class _WallDetailContent extends StatelessWidget {
                   label: wall.hasGrid ? 'Add more photos' : 'Start capture',
                   onTap: () => _onCapture(context),
                 ),
+                if ((wall.grid?.filledCount ?? 0) > 0) ...[
+                  const SizedBox(height: AppSpacing.sm),
+                  SecondaryActionButton(
+                    label: 'Upload to dashboard',
+                    icon: Icons.cloud_upload_outlined,
+                    onTap: () => _onUpload(context),
+                  ),
+                ],
               ],
             ),
           ),
@@ -242,5 +254,49 @@ class _WallDetailContent extends StatelessWidget {
     final base =
         '/sites/$siteId/buildings/$buildingId/floors/$floorId/walls/${wall.id}';
     context.push(wall.hasGrid ? '$base/grid-capture' : '$base/grid-init');
+  }
+
+  Future<void> _onUpload(BuildContext context) async {
+    final cubit = context.read<WallDetailCubit>();
+
+    showDialog<void>(
+      context: context,
+      barrierDismissible: false,
+      builder: (_) => const Center(child: CircularProgressIndicator()),
+    );
+
+    final success = await cubit.uploadToDashboard();
+    if (!context.mounted) return;
+    Navigator.of(context, rootNavigator: true).pop();
+
+    if (success) {
+      await showDialog<void>(
+        context: context,
+        builder: (dialogContext) => AlertDialog(
+          icon: const Icon(
+            Icons.check_circle,
+            color: AppColors.seed,
+            size: 40,
+          ),
+          title: const Text('Upload complete'),
+          content: const Text(
+            "This wall's photos were uploaded to the dashboard.",
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(dialogContext).pop(),
+              child: const Text('OK'),
+            ),
+          ],
+        ),
+      );
+    } else {
+      if (!context.mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Upload failed — check the Sync Queue for details.'),
+        ),
+      );
+    }
   }
 }

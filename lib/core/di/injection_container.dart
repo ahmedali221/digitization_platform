@@ -111,15 +111,6 @@ void setupDependencies() {
   GetIt.instance.registerLazySingleton<SyncRemoteDataSource>(
     () => SyncRemoteDataSource(GetIt.instance<Dio>()),
   );
-  GetIt.instance.registerLazySingleton<SyncQueueRepositoryImpl>(
-    () => SyncQueueRepositoryImpl(GetIt.instance<SyncQueueLocalDataSource>()),
-  );
-  GetIt.instance.registerLazySingleton<SyncQueueRepository>(
-    () => GetIt.instance<SyncQueueRepositoryImpl>(),
-  );
-  GetIt.instance.registerLazySingleton<SyncEnqueuer>(
-    () => GetIt.instance<SyncQueueRepositoryImpl>(),
-  );
   GetIt.instance.registerLazySingleton<CaptureSessionLocalDataSource>(
     () => CaptureSessionLocalDataSource(),
   );
@@ -131,6 +122,18 @@ void setupDependencies() {
       deviceIdProvider: GetIt.instance<DeviceIdProvider>(),
       directoryManager: GetIt.instance<DirectoryManager>(),
     ),
+  );
+  GetIt.instance.registerLazySingleton<SyncQueueRepositoryImpl>(
+    () => SyncQueueRepositoryImpl(
+      GetIt.instance<SyncQueueLocalDataSource>(),
+      GetIt.instance<SyncQueueRunner>(),
+    ),
+  );
+  GetIt.instance.registerLazySingleton<SyncQueueRepository>(
+    () => GetIt.instance<SyncQueueRepositoryImpl>(),
+  );
+  GetIt.instance.registerLazySingleton<SyncEnqueuer>(
+    () => GetIt.instance<SyncQueueRepositoryImpl>(),
   );
 
   GetIt.instance.registerLazySingleton<GridCaptureLocalDataSource>(

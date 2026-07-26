@@ -88,8 +88,11 @@ class CaptureSessionRecord extends HiveObject {
   @HiveField(2)
   final String floorId;
 
+  /// Mutable (unlike [sessionId]/[wallId]/[floorId]) so a session created
+  /// while `SiteMapper` had the site-id-resolution bug can be self-healed
+  /// on the next finalize rather than staying permanently unsyncable.
   @HiveField(3)
-  final String siteId;
+  String siteId;
 
   @HiveField(4)
   int gridRows;

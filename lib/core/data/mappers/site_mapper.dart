@@ -28,7 +28,12 @@ class SiteMapper {
         ? const <BuildingEntity>[]
         : (raw['buildings'] as List).map((b) {
             final buildingJson = (b as Map).cast<String, dynamic>();
-            return _mapBuilding(buildingJson, floorsByFloorId, localWallStatus);
+            return _mapBuilding(
+              buildingJson,
+              siteRecord.siteId,
+              floorsByFloorId,
+              localWallStatus,
+            );
           }).toList();
 
     final updateAvailable =
@@ -51,6 +56,7 @@ class SiteMapper {
 
   BuildingEntity _mapBuilding(
     Map<String, dynamic> buildingJson,
+    String siteId,
     Map<String, FloorPackageRecord> floorsByFloorId,
     Map<String, WallStatusRecord> localWallStatus,
   ) {
@@ -76,7 +82,11 @@ class SiteMapper {
 
     return BuildingEntity(
       id: buildingId,
-      siteId: buildingJson['site_id']?.toString() ?? '',
+      // The bundle's own building entries never carry a site_id field (see
+      // SitePackageBuilder::buildBuildingEntry) — the id this package was
+      // fetched under is the only correct source, and it applies to every
+      // building in it.
+      siteId: siteId,
       name: buildingJson['name'] as String,
       floors: floors,
     );
@@ -126,11 +136,19 @@ class SiteMapper {
 
     // Local status is the source of truth once it exists (§4) — the
     // server-published wall_status_index only seeds the very first read.
+    // lastCapture follows the exact same rule: a save on this device (which
+    // is what writes localRecord.updatedAt) is more current than whatever
+    // the downloaded bundle had at publish time.
     final status = localRecord != null
         ? WallStatus.values.byName(localRecord.status)
         : _parseServerStatus(serverEntry?['status'] as String?);
 
-    final lastCaptureAt = serverEntry?['last_capture_at'] as String?;
+    final serverLastCaptureAt = serverEntry?['last_capture_at'] as String?;
+    final lastCaptureAt =
+        localRecord?.updatedAt ??
+        (serverLastCaptureAt != null
+            ? DateTime.parse(serverLastCaptureAt)
+            : null);
 
     return WallEntity(
       id: wallId,
@@ -141,9 +159,7 @@ class SiteMapper {
           (wallJson['name'] as String?) ??
           '${_capitalize(wallJson['edge'] as String? ?? 'Wall')} wall',
       status: status,
-      lastCapture: formatRelativeTime(
-        lastCaptureAt != null ? DateTime.parse(lastCaptureAt) : null,
-      ),
+      lastCapture: formatRelativeTime(lastCaptureAt),
       grid: _mapGrid(serverEntry),
     );
   }

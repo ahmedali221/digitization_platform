@@ -2,6 +2,7 @@ import 'package:dio/dio.dart';
 import 'package:flutter/foundation.dart';
 
 import 'api_config.dart';
+import 'api_logging_interceptor.dart';
 import 'auth_interceptor.dart';
 
 /// Builds the single [Dio] instance the app uses for every dashboard call.
@@ -20,9 +21,7 @@ Dio buildApiClient(AuthInterceptor authInterceptor) {
   dio.interceptors.add(authInterceptor);
 
   if (kDebugMode) {
-    dio.interceptors.add(
-      LogInterceptor(requestBody: false, responseBody: false),
-    );
+    dio.interceptors.add(ApiLoggingInterceptor());
   }
 
   return dio;
