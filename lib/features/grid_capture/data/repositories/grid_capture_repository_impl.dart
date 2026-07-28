@@ -166,6 +166,44 @@ class GridCaptureRepositoryImpl implements GridCaptureRepository {
   }
 
   @override
+  Future<WallEntity?> deletePhoto(
+    String floorId,
+    String wallId,
+    int cellIndex,
+    String filePath,
+  ) async {
+    final session = _sessionLocal.get(wallId);
+    if (session == null ||
+        cellIndex < 0 ||
+        cellIndex >= session.gridRows * session.gridCols) {
+      return getWall(floorId, wallId);
+    }
+
+    final row = cellIndex ~/ session.gridCols;
+    final col = cellIndex % session.gridCols;
+    if (!session.removePhotoAt(row, col, filePath)) {
+      return getWall(floorId, wallId);
+    }
+
+    session.state = 'inProgress';
+    session.completedAt = null;
+    await _sessionLocal.put(session);
+
+    try {
+      await _fileLocal.deleteShot(wallId: wallId, filePath: filePath);
+    } catch (error) {
+      // The session record is authoritative. A failed best-effort cleanup
+      // must not make the discarded image reappear in the capture UI/sync.
+      debugPrint(
+        'GridCaptureRepositoryImpl: failed to delete photo file $filePath: '
+        '$error',
+      );
+    }
+
+    return _overlaySession(_siteRepository.findWall(floorId, wallId));
+  }
+
+  @override
   void saveFull(String floorId, String wallId) {
     final session = _sessionLocal.get(wallId);
     if (session == null || !session.isComplete) return;

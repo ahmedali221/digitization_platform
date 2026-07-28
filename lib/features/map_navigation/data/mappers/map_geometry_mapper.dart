@@ -98,23 +98,33 @@ class MapGeometryMapper {
       if (shape != null) cadShapes.add(shape);
     }
 
-    final roomRects = <RectShape>[];
+    final rooms = <FloorRoomGeometry>[];
     final wallLines = <String, WallLineShape>{};
     for (final room in (raw['rooms'] as List? ?? const []).cast<Map>()) {
       final roomJson = room.cast<String, dynamic>();
-      roomRects.add(_rectFrom(roomJson));
+      final roomWallIds = <String>{};
       for (final wall in (roomJson['walls'] as List? ?? const []).cast<Map>()) {
         final wallJson = wall.cast<String, dynamic>();
         final wallId = wallJson['wall_id']?.toString();
         if (wallId == null) continue;
+        roomWallIds.add(wallId);
         wallLines[wallId] = _lineFrom(wallJson);
       }
+      rooms.add(
+        FloorRoomGeometry(
+          id: roomJson['id'].toString(),
+          chamberId: roomJson['chamber_id']?.toString(),
+          label: roomJson['label']?.toString() ?? 'Room ${rooms.length + 1}',
+          rect: _rectFrom(roomJson),
+          wallIds: roomWallIds,
+        ),
+      );
     }
 
     return FloorRoomsGeometry(
       canvas: _canvasFrom(canvasJson, floorRecord.siteId),
       cadShapes: cadShapes,
-      roomRects: roomRects,
+      rooms: rooms,
       wallLines: wallLines,
     );
   }

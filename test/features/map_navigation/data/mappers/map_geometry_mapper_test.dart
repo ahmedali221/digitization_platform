@@ -96,6 +96,9 @@ void main() {
         ],
         'rooms': [
           {
+            'id': 'room-shape-10',
+            'chamber_id': 10,
+            'label': 'Room A',
             'x': 20,
             'y': 30,
             'w': 220,
@@ -128,7 +131,15 @@ void main() {
       geometry.cadShapes.whereType<CadCircleShape>().single.colorValue,
       0xFF2563EB,
     );
-    expect(geometry.roomRects, hasLength(1));
+    expect(geometry.rooms, hasLength(1));
+    expect(geometry.rooms.single.id, 'room-shape-10');
+    expect(geometry.rooms.single.chamberId, '10');
+    expect(geometry.rooms.single.label, 'Room A');
+    expect(geometry.rooms.single.wallIds, {'91'});
+    expect(
+      geometry.rooms.single.rect,
+      const RectShape(x: 20, y: 30, w: 220, h: 180),
+    );
     expect(geometry.wallLines['91'], isNotNull);
   });
 }

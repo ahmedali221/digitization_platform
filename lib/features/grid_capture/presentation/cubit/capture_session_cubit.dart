@@ -137,7 +137,7 @@ class CaptureSessionCubit extends Cubit<CaptureSessionState> {
 
     final row = cellId ~/ grid.cols + 1;
     final col = cellId % grid.cols + 1;
-    final shotNumber = grid.cells[cellId].photoCount + 1;
+    final shotNumber = _nextShotNumber(grid.cells[cellId].shotPaths);
 
     final saved = await _localDataSource.saveShot(
       wallId: _wallId,
@@ -159,6 +159,35 @@ class CaptureSessionCubit extends Cubit<CaptureSessionState> {
     // new shot to this cubit's own state directly rather than waiting for an
     // event that will never arrive.
     if (updatedWall != null) _onWallChanged(updatedWall);
+  }
+
+  Future<void> deletePhoto(int cellId, String filePath) async {
+    final current = state;
+    final grid = current is CaptureSessionLoaded ? current.grid : null;
+    if (grid == null ||
+        cellId < 0 ||
+        cellId >= grid.cells.length ||
+        !grid.cells[cellId].shotPaths.contains(filePath)) {
+      return;
+    }
+
+    final updatedWall = await _repository.deletePhoto(
+      _floorId,
+      _wallId,
+      cellId,
+      filePath,
+    );
+    if (updatedWall != null) _onWallChanged(updatedWall);
+  }
+
+  int _nextShotNumber(List<String> shotPaths) {
+    final shotPattern = RegExp(r'_S(\d+)\.[^.]+$');
+    var highestShot = shotPaths.length;
+    for (final path in shotPaths) {
+      final parsed = int.tryParse(shotPattern.firstMatch(path)?.group(1) ?? '');
+      if (parsed != null && parsed > highestShot) highestShot = parsed;
+    }
+    return highestShot + 1;
   }
 
   void toggleExposureLock() {

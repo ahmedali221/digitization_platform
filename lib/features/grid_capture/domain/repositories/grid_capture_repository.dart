@@ -40,6 +40,16 @@ abstract class GridCaptureRepository {
     int? shot,
   });
 
+  /// Removes one captured photo from the cell and from on-device storage.
+  /// Returns the wall with the updated grid so the active camera screen can
+  /// refresh immediately without waiting for [watchWall] to emit.
+  Future<WallEntity?> deletePhoto(
+    String floorId,
+    String wallId,
+    int cellIndex,
+    String filePath,
+  );
+
   /// Only meaningful once every cell has at least one photo — marks the wall
   /// `captured` and awaiting admin review.
   void saveFull(String floorId, String wallId);

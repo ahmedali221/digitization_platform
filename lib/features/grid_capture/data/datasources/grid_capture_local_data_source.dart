@@ -41,6 +41,21 @@ class GridCaptureLocalDataSource {
     return (path: targetPath, sha256: checksum);
   }
 
+  /// Deletes a shot the operator explicitly discarded from both the active
+  /// session and its raw backup. Keeping either copy would make a deleted
+  /// image eligible for a later sync or leave it consuming storage forever.
+  Future<void> deleteShot({
+    required String wallId,
+    required String filePath,
+  }) async {
+    final sessionFile = File(filePath);
+    if (await sessionFile.exists()) await sessionFile.delete();
+
+    final backupDir = await _directoryManager.backupDir(wallId);
+    final backupFile = File(p.join(backupDir.path, p.basename(filePath)));
+    if (await backupFile.exists()) await backupFile.delete();
+  }
+
   /// Atomic write per the session-integrity rule: a session only "exists"
   /// (for interrupted-session detection) once this file is present.
   Future<void> writeManifest({

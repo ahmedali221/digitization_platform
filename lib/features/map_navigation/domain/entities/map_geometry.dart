@@ -33,24 +33,46 @@ class BuildingFloorsGeometry extends Equatable {
   List<Object?> get props => [canvas, floorRects];
 }
 
-/// Real, dashboard-drawn positions for one floor's rooms and walls.
-/// [roomRects] are a non-interactive backdrop (drawn behind the walls, never
-/// tappable); [wallLines] are keyed by wall id, matching `WallEntity.id`. A
-/// wall with no entry here (e.g. one added via the on-device "Add wall" flow)
-/// simply isn't drawn — it still appears in the scrollable wall list.
+/// One selectable room and the ids of the walls nested under it in the
+/// published floor package.
+class FloorRoomGeometry extends Equatable {
+  const FloorRoomGeometry({
+    required this.id,
+    required this.label,
+    required this.rect,
+    required this.wallIds,
+    this.chamberId,
+  });
+
+  final String id;
+  final String? chamberId;
+  final String label;
+  final RectShape rect;
+  final Set<String> wallIds;
+
+  @override
+  List<Object?> get props => [id, chamberId, label, rect, wallIds];
+}
+
+/// Real, dashboard-drawn positions for one floor's rooms and walls. Retaining
+/// the room-to-wall relationship lets the floor view show only the selected
+/// room's walls. [wallLines] are keyed by `WallEntity.id`.
 class FloorRoomsGeometry extends Equatable {
   const FloorRoomsGeometry({
     required this.canvas,
     required this.cadShapes,
-    required this.roomRects,
+    required this.rooms,
     required this.wallLines,
   });
 
   final CanvasSize canvas;
   final List<CadDrawingShape> cadShapes;
-  final List<RectShape> roomRects;
+  final List<FloorRoomGeometry> rooms;
   final Map<String, WallLineShape> wallLines;
 
+  /// Kept as a convenience for callers that only need room outlines.
+  List<RectShape> get roomRects => rooms.map((room) => room.rect).toList();
+
   @override
-  List<Object?> get props => [canvas, cadShapes, roomRects, wallLines];
+  List<Object?> get props => [canvas, cadShapes, rooms, wallLines];
 }

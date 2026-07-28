@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 
 import 'package:camera/camera.dart';
@@ -107,6 +108,14 @@ class _CameraBodyState extends State<_CameraBody> {
   _CameraLoadState _loadState = _CameraLoadState.loading;
   String? _errorMessage;
   bool _capturing = false;
+  final Set<String> _deletingPaths = {};
+  double _minimumZoom = 1;
+  double _maximumZoom = 1;
+  double _currentZoom = 1;
+  double _appliedZoom = 1;
+  double _baseZoom = 1;
+  double? _pendingZoom;
+  bool _applyingZoom = false;
 
   @override
   void initState() {
@@ -130,6 +139,10 @@ class _CameraBodyState extends State<_CameraBody> {
         enableAudio: false,
       );
       await controller.initialize();
+      final minimumZoom = await controller.getMinZoomLevel();
+      final maximumZoom = await controller.getMaxZoomLevel();
+      final initialZoom = 1.0.clamp(minimumZoom, maximumZoom).toDouble();
+      await controller.setZoomLevel(initialZoom);
       if (!mounted) {
         await controller.dispose();
         return;
@@ -137,6 +150,11 @@ class _CameraBodyState extends State<_CameraBody> {
       setState(() {
         _controller = controller;
         _loadState = _CameraLoadState.ready;
+        _minimumZoom = minimumZoom;
+        _maximumZoom = maximumZoom;
+        _currentZoom = initialZoom;
+        _appliedZoom = initialZoom;
+        _baseZoom = initialZoom;
       });
     } catch (error) {
       if (!mounted) return;
@@ -157,6 +175,71 @@ class _CameraBodyState extends State<_CameraBody> {
       await context.read<CaptureSessionCubit>().takePhoto(file);
     } finally {
       if (mounted) setState(() => _capturing = false);
+    }
+  }
+
+  void _handleScaleStart(ScaleStartDetails details) {
+    _baseZoom = _currentZoom;
+  }
+
+  void _handleScaleUpdate(ScaleUpdateDetails details) {
+    if (details.pointerCount < 2) return;
+    _requestZoom(_baseZoom * details.scale);
+  }
+
+  void _zoomBy(double delta) => _requestZoom(_currentZoom + delta);
+
+  void _requestZoom(double requestedZoom) {
+    if (_loadState != _CameraLoadState.ready) return;
+    final zoom = requestedZoom.clamp(_minimumZoom, _maximumZoom).toDouble();
+    if ((zoom - _currentZoom).abs() < 0.01) return;
+
+    setState(() => _currentZoom = zoom);
+    _pendingZoom = zoom;
+    if (!_applyingZoom) unawaited(_applyPendingZoom());
+  }
+
+  Future<void> _applyPendingZoom() async {
+    _applyingZoom = true;
+    try {
+      while (mounted && _pendingZoom != null) {
+        final zoom = _pendingZoom!;
+        _pendingZoom = null;
+        await _controller?.setZoomLevel(zoom);
+        _appliedZoom = zoom;
+      }
+    } on CameraException catch (error) {
+      _pendingZoom = null;
+      if (mounted) {
+        setState(() => _currentZoom = _appliedZoom);
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              'Could not change camera zoom: '
+              '${error.description ?? error.code}',
+            ),
+          ),
+        );
+      }
+    } finally {
+      _applyingZoom = false;
+      if (mounted && _pendingZoom != null) unawaited(_applyPendingZoom());
+    }
+  }
+
+  Future<void> _handleDeletePhoto(int cellId, String path) async {
+    if (_capturing || _deletingPaths.contains(path)) return;
+    setState(() => _deletingPaths.add(path));
+    try {
+      await context.read<CaptureSessionCubit>().deletePhoto(cellId, path);
+    } catch (error) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Could not delete the photo: $error')),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _deletingPaths.remove(path));
     }
   }
 
@@ -213,6 +296,8 @@ class _CameraBodyState extends State<_CameraBody> {
                 loadState: _loadState,
                 errorMessage: _errorMessage,
                 controller: _controller,
+                onScaleStart: _handleScaleStart,
+                onScaleUpdate: _handleScaleUpdate,
               ),
               Positioned(
                 top: AppSpacing.lg,
@@ -249,6 +334,18 @@ class _CameraBodyState extends State<_CameraBody> {
                   ),
                 ),
               ),
+              if (_loadState == _CameraLoadState.ready &&
+                  _maximumZoom > _minimumZoom)
+                Positioned(
+                  bottom: AppSpacing.md,
+                  child: _ZoomControls(
+                    zoom: _currentZoom,
+                    canZoomOut: _currentZoom > _minimumZoom + 0.01,
+                    canZoomIn: _currentZoom < _maximumZoom - 0.01,
+                    onZoomOut: () => _zoomBy(-0.5),
+                    onZoomIn: () => _zoomBy(0.5),
+                  ),
+                ),
             ],
           ),
         ),
@@ -260,6 +357,8 @@ class _CameraBodyState extends State<_CameraBody> {
         ),
         _CaptureFooter(
           shotPaths: shotPaths,
+          deletingPaths: _deletingPaths,
+          onDelete: (path) => _handleDeletePhoto(activeCellId, path),
           onShutter: _loadState == _CameraLoadState.ready && !_capturing
               ? _handleShutter
               : null,
@@ -274,11 +373,15 @@ class _Viewfinder extends StatelessWidget {
     required this.loadState,
     required this.errorMessage,
     required this.controller,
+    required this.onScaleStart,
+    required this.onScaleUpdate,
   });
 
   final _CameraLoadState loadState;
   final String? errorMessage;
   final CameraController? controller;
+  final GestureScaleStartCallback onScaleStart;
+  final GestureScaleUpdateCallback onScaleUpdate;
 
   @override
   Widget build(BuildContext context) {
@@ -314,15 +417,20 @@ class _Viewfinder extends StatelessWidget {
           // camera to a centered landscape AspectRatio. BoxFit.cover keeps
           // the sensor image proportional and crops only the overflow, so the
           // capture surface is larger without stretching/compressing it.
-          return ClipRect(
-            child: SizedBox.expand(
-              key: const ValueKey('camera-viewfinder'),
-              child: FittedBox(
-                fit: BoxFit.cover,
-                child: SizedBox(
-                  width: previewWidth,
-                  height: previewHeight,
-                  child: CameraPreview(cameraController),
+          return GestureDetector(
+            key: const ValueKey('camera-viewfinder'),
+            behavior: HitTestBehavior.opaque,
+            onScaleStart: onScaleStart,
+            onScaleUpdate: onScaleUpdate,
+            child: ClipRect(
+              child: SizedBox.expand(
+                child: FittedBox(
+                  fit: BoxFit.cover,
+                  child: SizedBox(
+                    width: previewWidth,
+                    height: previewHeight,
+                    child: CameraPreview(cameraController),
+                  ),
                 ),
               ),
             ),
@@ -354,6 +462,67 @@ class _DarkPill extends StatelessWidget {
         style: Theme.of(
           context,
         ).textTheme.labelLarge?.copyWith(color: Colors.white),
+      ),
+    );
+  }
+}
+
+class _ZoomControls extends StatelessWidget {
+  const _ZoomControls({
+    required this.zoom,
+    required this.canZoomOut,
+    required this.canZoomIn,
+    required this.onZoomOut,
+    required this.onZoomIn,
+  });
+
+  final double zoom;
+  final bool canZoomOut;
+  final bool canZoomIn;
+  final VoidCallback onZoomOut;
+  final VoidCallback onZoomIn;
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: AppColors.cameraScrim,
+      borderRadius: BorderRadius.circular(AppRadius.chip),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          IconButton(
+            key: const ValueKey('camera-zoom-out'),
+            tooltip: 'Zoom out',
+            onPressed: canZoomOut ? onZoomOut : null,
+            icon: const Icon(Icons.remove),
+            color: Colors.white,
+            disabledColor: Colors.white38,
+          ),
+          Semantics(
+            liveRegion: true,
+            label: 'Camera zoom ${zoom.toStringAsFixed(1)} times',
+            child: SizedBox(
+              width: 48,
+              child: Text(
+                '${zoom.toStringAsFixed(1)}×',
+                key: const ValueKey('camera-zoom-level'),
+                textAlign: TextAlign.center,
+                style: Theme.of(context).textTheme.labelLarge?.copyWith(
+                  color: Colors.white,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+            ),
+          ),
+          IconButton(
+            key: const ValueKey('camera-zoom-in'),
+            tooltip: 'Zoom in',
+            onPressed: canZoomIn ? onZoomIn : null,
+            icon: const Icon(Icons.add),
+            color: Colors.white,
+            disabledColor: Colors.white38,
+          ),
+        ],
       ),
     );
   }
@@ -449,9 +618,15 @@ class _SaveButton extends StatelessWidget {
 }
 
 class _ThumbnailStrip extends StatelessWidget {
-  const _ThumbnailStrip({required this.shotPaths});
+  const _ThumbnailStrip({
+    required this.shotPaths,
+    required this.deletingPaths,
+    required this.onDelete,
+  });
 
   final List<String> shotPaths;
+  final Set<String> deletingPaths;
+  final ValueChanged<String> onDelete;
 
   @override
   Widget build(BuildContext context) {
@@ -462,7 +637,14 @@ class _ThumbnailStrip extends StatelessWidget {
         scrollDirection: Axis.horizontal,
         itemCount: shotPaths.length,
         separatorBuilder: (_, _) => const SizedBox(width: AppSpacing.sm),
-        itemBuilder: (context, index) => _ThumbnailTile(path: shotPaths[index]),
+        itemBuilder: (context, index) {
+          final path = shotPaths[index];
+          return _ThumbnailTile(
+            path: path,
+            deleting: deletingPaths.contains(path),
+            onDelete: () => onDelete(path),
+          );
+        },
       ),
     );
   }
@@ -472,9 +654,16 @@ class _ThumbnailStrip extends StatelessWidget {
 /// consume two full rows below the camera. The reclaimed height belongs to the
 /// live viewfinder, while the thumbnails are slightly larger than before.
 class _CaptureFooter extends StatelessWidget {
-  const _CaptureFooter({required this.shotPaths, required this.onShutter});
+  const _CaptureFooter({
+    required this.shotPaths,
+    required this.deletingPaths,
+    required this.onDelete,
+    required this.onShutter,
+  });
 
   final List<String> shotPaths;
+  final Set<String> deletingPaths;
+  final ValueChanged<String> onDelete;
   final VoidCallback? onShutter;
 
   @override
@@ -499,7 +688,11 @@ class _CaptureFooter extends StatelessWidget {
             children: [
               SizedBox(
                 width: sideWidth,
-                child: _ThumbnailStrip(shotPaths: shotPaths),
+                child: _ThumbnailStrip(
+                  shotPaths: shotPaths,
+                  deletingPaths: deletingPaths,
+                  onDelete: onDelete,
+                ),
               ),
               const SizedBox(width: sideGap),
               _ShutterButton(onTap: onShutter),
@@ -514,9 +707,15 @@ class _CaptureFooter extends StatelessWidget {
 }
 
 class _ThumbnailTile extends StatelessWidget {
-  const _ThumbnailTile({required this.path});
+  const _ThumbnailTile({
+    required this.path,
+    required this.deleting,
+    required this.onDelete,
+  });
 
   final String path;
+  final bool deleting;
+  final VoidCallback onDelete;
 
   @override
   Widget build(BuildContext context) {
@@ -544,20 +743,33 @@ class _ThumbnailTile extends StatelessWidget {
             ),
           ),
           Positioned(
-            top: 2,
-            right: 2,
-            // Delete is a no-op stub — retake/delete management is a
-            // separate future task, not part of wiring up capture itself.
-            child: GestureDetector(
-              onTap: () {},
-              child: Container(
-                width: 18,
-                height: 18,
-                decoration: BoxDecoration(
-                  color: Colors.black.withValues(alpha: 0.7),
-                  shape: BoxShape.circle,
+            top: 0,
+            right: 0,
+            child: SizedBox(
+              width: 36,
+              height: 36,
+              child: IconButton(
+                key: ValueKey('delete-photo-$path'),
+                tooltip: 'Delete photo',
+                padding: EdgeInsets.zero,
+                onPressed: deleting ? null : onDelete,
+                icon: Container(
+                  width: 20,
+                  height: 20,
+                  decoration: BoxDecoration(
+                    color: Colors.black.withValues(alpha: 0.75),
+                    shape: BoxShape.circle,
+                  ),
+                  child: deleting
+                      ? const Padding(
+                          padding: EdgeInsets.all(4),
+                          child: CircularProgressIndicator(
+                            strokeWidth: 2,
+                            color: Colors.white,
+                          ),
+                        )
+                      : const Icon(Icons.close, size: 13, color: Colors.white),
                 ),
-                child: const Icon(Icons.close, size: 12, color: Colors.white),
               ),
             ),
           ),

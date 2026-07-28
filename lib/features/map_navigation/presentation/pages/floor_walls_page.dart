@@ -86,7 +86,7 @@ class FloorWallsPage extends StatelessWidget {
   }
 }
 
-class _FloorWallsContent extends StatelessWidget {
+class _FloorWallsContent extends StatefulWidget {
   const _FloorWallsContent({
     required this.siteId,
     required this.siteName,
@@ -108,19 +108,33 @@ class _FloorWallsContent extends StatelessWidget {
   final FloorRoomsGeometry? geometry;
 
   @override
+  State<_FloorWallsContent> createState() => _FloorWallsContentState();
+}
+
+class _FloorWallsContentState extends State<_FloorWallsContent> {
+  String? _selectedRoomId;
+
+  @override
   Widget build(BuildContext context) {
     final textTheme = Theme.of(context).textTheme;
-    final doneCount = walls
+    final roomFilters = _roomFilters(widget.geometry, widget.walls);
+    final selectedRoom = _selectedRoom(roomFilters);
+    final visibleWalls = selectedRoom == null
+        ? widget.walls
+        : widget.walls
+              .where((wall) => selectedRoom.wallIds.contains(wall.id))
+              .toList();
+    final doneCount = visibleWalls
         .where(
           (w) => w.status == WallStatus.done || w.status == WallStatus.captured,
         )
         .length;
     final hasCanvasArtwork =
-        geometry != null &&
-        (geometry!.cadShapes.isNotEmpty ||
-            geometry!.roomRects.isNotEmpty ||
-            geometry!.wallLines.isNotEmpty ||
-            geometry!.canvas.backgroundImagePath != null);
+        widget.geometry != null &&
+        (widget.geometry!.cadShapes.isNotEmpty ||
+            widget.geometry!.rooms.isNotEmpty ||
+            widget.geometry!.wallLines.isNotEmpty ||
+            widget.geometry!.canvas.backgroundImagePath != null);
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -150,16 +164,17 @@ class _FloorWallsContent extends StatelessWidget {
                       onTap: () => context.go('/sites'),
                     ),
                     BreadcrumbItem(
-                      label: siteName,
-                      onTap: () => context.go('/sites/$siteId/buildings'),
+                      label: widget.siteName,
+                      onTap: () =>
+                          context.go('/sites/${widget.siteId}/buildings'),
                     ),
                     BreadcrumbItem(
-                      label: buildingName,
+                      label: widget.buildingName,
                       onTap: () => context.go(
-                        '/sites/$siteId/buildings/$buildingId/floors',
+                        '/sites/${widget.siteId}/buildings/${widget.buildingId}/floors',
                       ),
                     ),
-                    BreadcrumbItem(label: floorName),
+                    BreadcrumbItem(label: widget.floorName),
                   ],
                 ),
               ),
@@ -182,14 +197,15 @@ class _FloorWallsContent extends StatelessWidget {
                   mainAxisSize: MainAxisSize.min,
                   children: [
                     Text(
-                      floorName,
+                      widget.floorName,
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                       style: textTheme.titleLarge?.copyWith(fontSize: 20),
                     ),
                     const SizedBox(height: 2),
                     Text(
-                      '$doneCount/${walls.length} walls · tap a wall to open',
+                      '${selectedRoom?.label ?? 'All rooms'} · '
+                      '$doneCount/${visibleWalls.length} walls captured',
                       style: textTheme.bodyMedium?.copyWith(
                         color: AppColors.onSurfaceMuted,
                       ),
@@ -199,20 +215,26 @@ class _FloorWallsContent extends StatelessWidget {
               ),
               _AddWallButton(
                 onTap: () => context.push(
-                  '/sites/$siteId/buildings/$buildingId/floors/$floorId/add-wall',
+                  '/sites/${widget.siteId}/buildings/${widget.buildingId}/floors/${widget.floorId}/add-wall',
                 ),
               ),
             ],
           ),
         ),
+        if (roomFilters.isNotEmpty)
+          _RoomFilterBar(
+            rooms: roomFilters,
+            selectedRoomId: selectedRoom!.id,
+            onSelected: (roomId) => setState(() => _selectedRoomId = roomId),
+          ),
         Expanded(
-          child: walls.isEmpty && !hasCanvasArtwork
+          child: widget.walls.isEmpty && !hasCanvasArtwork
               ? EmptyState(
                   icon: Icons.grid_view,
                   message: 'No walls yet for this floor.',
                   actionLabel: 'Add wall',
                   onAction: () => context.push(
-                    '/sites/$siteId/buildings/$buildingId/floors/$floorId/add-wall',
+                    '/sites/${widget.siteId}/buildings/${widget.buildingId}/floors/${widget.floorId}/add-wall',
                   ),
                 )
               : SingleChildScrollView(
@@ -225,15 +247,20 @@ class _FloorWallsContent extends StatelessWidget {
                   child: Column(
                     children: [
                       _WallLayoutDiagram(
-                        walls: walls,
-                        geometry: geometry,
+                        walls: visibleWalls,
+                        geometry: widget.geometry,
+                        selectedRoomId: selectedRoom?.id,
+                        onRoomTap: (roomId) =>
+                            setState(() => _selectedRoomId = roomId),
                         onWallTap: (wall) => _openWallDetail(context, wall),
                       ),
-                      if (walls.isEmpty)
+                      if (visibleWalls.isEmpty)
                         Padding(
                           padding: const EdgeInsets.only(bottom: AppSpacing.md),
                           child: Text(
-                            'Canvas loaded · no mapped walls yet',
+                            selectedRoom == null
+                                ? 'Canvas loaded · no mapped walls yet'
+                                : 'No walls in ${selectedRoom.label}',
                             style: textTheme.bodyMedium?.copyWith(
                               color: AppColors.onSurfaceMuted,
                             ),
@@ -241,11 +268,12 @@ class _FloorWallsContent extends StatelessWidget {
                         )
                       else
                         const SizedBox(height: AppSpacing.sm),
-                      for (var i = 0; i < walls.length; i++)
+                      for (var i = 0; i < visibleWalls.length; i++)
                         WallRow(
-                          wall: walls[i],
-                          isLast: i == walls.length - 1,
-                          onTap: () => _openWallDetail(context, walls[i]),
+                          wall: visibleWalls[i],
+                          isLast: i == visibleWalls.length - 1,
+                          onTap: () =>
+                              _openWallDetail(context, visibleWalls[i]),
                         ),
                     ],
                   ),
@@ -257,7 +285,108 @@ class _FloorWallsContent extends StatelessWidget {
 
   void _openWallDetail(BuildContext context, WallEntity wall) {
     context.push(
-      '/sites/$siteId/buildings/$buildingId/floors/$floorId/walls/${wall.id}',
+      '/sites/${widget.siteId}/buildings/${widget.buildingId}/floors/${widget.floorId}/walls/${wall.id}',
+    );
+  }
+
+  _RoomFilter? _selectedRoom(List<_RoomFilter> rooms) {
+    if (rooms.isEmpty) return null;
+    return rooms.firstWhere(
+      (room) => room.id == _selectedRoomId,
+      orElse: () => rooms.first,
+    );
+  }
+}
+
+List<_RoomFilter> _roomFilters(
+  FloorRoomsGeometry? geometry,
+  List<WallEntity> walls,
+) {
+  final rooms = [
+    for (final room in geometry?.rooms ?? const <FloorRoomGeometry>[])
+      _RoomFilter(id: room.id, label: room.label, wallIds: room.wallIds),
+  ];
+  final assignedWallIds = rooms.expand((room) => room.wallIds).toSet();
+  final unassignedWallIds = walls
+      .where((wall) => !assignedWallIds.contains(wall.id))
+      .map((wall) => wall.id)
+      .toSet();
+
+  if (rooms.isNotEmpty && unassignedWallIds.isNotEmpty) {
+    rooms.add(
+      _RoomFilter(
+        id: _RoomFilter.unassignedId,
+        label: 'Unassigned',
+        wallIds: unassignedWallIds,
+      ),
+    );
+  }
+  return rooms;
+}
+
+class _RoomFilter {
+  const _RoomFilter({
+    required this.id,
+    required this.label,
+    required this.wallIds,
+  });
+
+  static const unassignedId = '_unassigned_walls';
+
+  final String id;
+  final String label;
+  final Set<String> wallIds;
+}
+
+class _RoomFilterBar extends StatelessWidget {
+  const _RoomFilterBar({
+    required this.rooms,
+    required this.selectedRoomId,
+    required this.onSelected,
+  });
+
+  final List<_RoomFilter> rooms;
+  final String selectedRoomId;
+  final ValueChanged<String> onSelected;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(
+        OverviewMetrics.horizontalPadding,
+        0,
+        OverviewMetrics.horizontalPadding,
+        AppSpacing.md,
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            'Room',
+            style: Theme.of(
+              context,
+            ).textTheme.labelLarge?.copyWith(color: AppColors.onSurfaceMuted),
+          ),
+          const SizedBox(height: AppSpacing.xs),
+          SingleChildScrollView(
+            scrollDirection: Axis.horizontal,
+            child: Row(
+              children: [
+                for (var index = 0; index < rooms.length; index++) ...[
+                  ChoiceChip(
+                    key: ValueKey('room-filter-${rooms[index].id}'),
+                    label: Text(rooms[index].label),
+                    selected: rooms[index].id == selectedRoomId,
+                    onSelected: (_) => onSelected(rooms[index].id),
+                  ),
+                  if (index != rooms.length - 1)
+                    const SizedBox(width: AppSpacing.sm),
+                ],
+              ],
+            ),
+          ),
+        ],
+      ),
     );
   }
 }
@@ -311,11 +440,15 @@ class _WallLayoutDiagram extends StatelessWidget {
   const _WallLayoutDiagram({
     required this.walls,
     required this.geometry,
+    required this.selectedRoomId,
+    required this.onRoomTap,
     required this.onWallTap,
   });
 
   final List<WallEntity> walls;
   final FloorRoomsGeometry? geometry;
+  final String? selectedRoomId;
+  final ValueChanged<String> onRoomTap;
   final ValueChanged<WallEntity> onWallTap;
 
   static const _fallbackCanvasSize = CanvasSize(width: 300, height: 160);
@@ -342,12 +475,14 @@ class _WallLayoutDiagram extends StatelessWidget {
       displayHeight = _geometryDisplayHeight;
       shapes = [
         for (final cadShape in geometry.cadShapes) _canvasShapeForCad(cadShape),
-        for (var i = 0; i < geometry.roomRects.length; i++)
+        for (final room in geometry.rooms)
           CanvasRect(
-            id: '_room_$i',
-            color: AppColors.outlineSubtle,
-            rect: geometry.roomRects[i],
-            selectable: false,
+            id: '_room_${room.id}',
+            label: room.label,
+            color: room.id == selectedRoomId
+                ? AppColors.seed
+                : AppColors.outlineSubtle,
+            rect: room.rect,
           ),
         for (final wall in walls)
           if (geometry.wallLines[wall.id] case final line?)
@@ -392,8 +527,13 @@ class _WallLayoutDiagram extends StatelessWidget {
               shapes: shapes,
               interactive: geometry != null,
               fullscreenTitle: 'Walls map',
-              onShapeTap: (id) =>
-                  onWallTap(walls.firstWhere((w) => w.id == id)),
+              onShapeTap: (id) {
+                if (id.startsWith('_room_')) {
+                  onRoomTap(id.substring('_room_'.length));
+                  return;
+                }
+                onWallTap(walls.firstWhere((wall) => wall.id == id));
+              },
             ),
           ),
         ),

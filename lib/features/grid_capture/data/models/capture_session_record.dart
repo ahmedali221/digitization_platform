@@ -131,4 +131,24 @@ class CaptureSessionRecord extends HiveObject {
         .map((c) => c.row == row && c.col == col ? c.withPhotoAdded(photo) : c)
         .toList();
   }
+
+  bool removePhotoAt(int row, int col, String filePath) {
+    final cell = cellAt(row, col);
+    if (!cell.photos.any((photo) => photo.file == filePath)) return false;
+
+    cells = cells
+        .map(
+          (candidate) => candidate.row == row && candidate.col == col
+              ? CaptureCellRecord(
+                  row: candidate.row,
+                  col: candidate.col,
+                  photos: candidate.photos
+                      .where((photo) => photo.file != filePath)
+                      .toList(),
+                )
+              : candidate,
+        )
+        .toList();
+    return true;
+  }
 }
