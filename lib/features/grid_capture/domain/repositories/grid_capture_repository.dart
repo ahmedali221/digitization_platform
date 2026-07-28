@@ -6,6 +6,12 @@ import '../../../../core/domain/entities/wall.dart';
 /// space.
 enum StorageCheckResult { sufficient, low, critical }
 
+/// Outcome of [GridCaptureRepository.reshapeGrid] — [blockedShrinkHasPhotos]
+/// mirrors the web dashboard's `WallGridService::assertRemovedCellsEmpty`
+/// rule: a resize that would drop a cell that already has photos is refused
+/// rather than silently discarding captured work.
+enum GridReshapeResult { applied, blockedShrinkHasPhotos }
+
 /// Contract for the grid-init / grid-capture / camera / coverage-review
 /// session (FLUTTER_MOBILE_PLAN.md Phases 3-4). Reads/writes the same
 /// site/floor/wall tree [SiteRepository] owns — this narrower interface only
@@ -21,6 +27,20 @@ abstract class GridCaptureRepository {
   Future<StorageCheckResult> checkStorageForNewSession(int cellCount);
 
   void createGrid(String floorId, String wallId, int rows, int cols);
+
+  /// Changes an already-initialized grid's dimensions in place, keeping the
+  /// photos already captured in any cell that still exists after the
+  /// resize (row/col < the new [rows]/[cols]) — an operator who over- or
+  /// under-sized the grid at init time doesn't need to lose captured work
+  /// or restart the wall to fix it. Returns the wall with the reshaped grid
+  /// already applied so callers can update their own state directly (same
+  /// reason [capturePhoto] does: [watchWall] never re-emits for this).
+  ({GridReshapeResult result, WallEntity? wall}) reshapeGrid(
+    String floorId,
+    String wallId,
+    int rows,
+    int cols,
+  );
 
   /// [filePath] is where the shot was already saved on disk (by the local
   /// data source, before this call) — the repository only records it.

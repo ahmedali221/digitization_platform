@@ -88,22 +88,81 @@ class GridCaptureRepositoryImpl implements GridCaptureRepository {
 
   @override
   void createGrid(String floorId, String wallId, int rows, int cols) {
-    final siteId = _siteIdForFloor(floorId);
-    _sessionLocal.put(
-      CaptureSessionRecord(
-        sessionId: wallId,
-        wallId: wallId,
-        floorId: floorId,
-        siteId: siteId ?? '',
-        gridRows: rows,
-        gridCols: cols,
-        cells: List.generate(
-          rows * cols,
-          (i) => CaptureCellRecord(row: i ~/ cols, col: i % cols, photos: []),
-        ),
-        state: 'inProgress',
-        createdAt: DateTime.now(),
+    _sessionLocal.put(_newSessionRecord(floorId, wallId, rows, cols));
+  }
+
+  CaptureSessionRecord _newSessionRecord(
+    String floorId,
+    String wallId,
+    int rows,
+    int cols,
+  ) {
+    return CaptureSessionRecord(
+      sessionId: wallId,
+      wallId: wallId,
+      floorId: floorId,
+      siteId: _siteIdForFloor(floorId) ?? '',
+      gridRows: rows,
+      gridCols: cols,
+      cells: List.generate(
+        rows * cols,
+        (i) => CaptureCellRecord(row: i ~/ cols, col: i % cols, photos: []),
       ),
+      state: 'inProgress',
+      createdAt: DateTime.now(),
+    );
+  }
+
+  @override
+  ({GridReshapeResult result, WallEntity? wall}) reshapeGrid(
+    String floorId,
+    String wallId,
+    int rows,
+    int cols,
+  ) {
+    var session = _sessionLocal.get(wallId);
+    if (session == null) {
+      // Mirrors capturePhoto's lazy-init: a wall whose grid was created
+      // server-side (or by a prior local session) has no local session
+      // record yet — build one from the grid dimensions SiteRepository
+      // already knows about before reshaping it.
+      final grid = _siteRepository.findWall(floorId, wallId)?.grid;
+      if (grid == null) {
+        createGrid(floorId, wallId, rows, cols);
+        return (
+          result: GridReshapeResult.applied,
+          wall: _overlaySession(_siteRepository.findWall(floorId, wallId)),
+        );
+      }
+      session = _newSessionRecord(floorId, wallId, grid.rows, grid.cols);
+    }
+
+    final shrinking = rows < session.gridRows || cols < session.gridCols;
+    if (shrinking &&
+        session.cells.any(
+          (c) => (c.row >= rows || c.col >= cols) && c.photos.isNotEmpty,
+        )) {
+      return (result: GridReshapeResult.blockedShrinkHasPhotos, wall: null);
+    }
+
+    final existingByPosition = {
+      for (final cell in session.cells) (cell.row, cell.col): cell,
+    };
+    session.cells = List.generate(rows * cols, (i) {
+      final row = i ~/ cols;
+      final col = i % cols;
+      return existingByPosition[(row, col)] ??
+          CaptureCellRecord(row: row, col: col, photos: []);
+    });
+    session.gridRows = rows;
+    session.gridCols = cols;
+    session.state = session.isComplete ? 'completed' : 'inProgress';
+    if (session.state == 'inProgress') session.completedAt = null;
+    _sessionLocal.put(session);
+
+    return (
+      result: GridReshapeResult.applied,
+      wall: _overlaySession(_siteRepository.findWall(floorId, wallId)),
     );
   }
 
@@ -124,25 +183,7 @@ class GridCaptureRepositoryImpl implements GridCaptureRepository {
       // dimensions SiteRepository already knows about.
       final grid = _siteRepository.findWall(floorId, wallId)?.grid;
       if (grid == null) return null;
-      final siteId = _siteIdForFloor(floorId);
-      session = CaptureSessionRecord(
-        sessionId: wallId,
-        wallId: wallId,
-        floorId: floorId,
-        siteId: siteId ?? '',
-        gridRows: grid.rows,
-        gridCols: grid.cols,
-        cells: List.generate(
-          grid.rows * grid.cols,
-          (i) => CaptureCellRecord(
-            row: i ~/ grid.cols,
-            col: i % grid.cols,
-            photos: [],
-          ),
-        ),
-        state: 'inProgress',
-        createdAt: DateTime.now(),
-      );
+      session = _newSessionRecord(floorId, wallId, grid.rows, grid.cols);
     }
 
     final row = cellIndex ~/ session.gridCols;

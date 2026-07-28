@@ -6,6 +6,7 @@ import '../../features/grid_capture/presentation/pages/camera_capture_page.dart'
 import '../../features/grid_capture/presentation/pages/coverage_review_page.dart';
 import '../../features/grid_capture/presentation/pages/grid_capture_page.dart';
 import '../../features/grid_capture/presentation/pages/grid_init_page.dart';
+import '../../features/grid_capture/presentation/pages/grid_reshape_page.dart';
 import '../../features/map_navigation/presentation/pages/add_wall_page.dart';
 import '../../features/map_navigation/presentation/pages/buildings_list_page.dart';
 import '../../features/map_navigation/presentation/pages/floor_walls_page.dart';
@@ -78,6 +79,24 @@ final GoRouter appRouter = GoRouter(
             GetIt.instance<SiteRepository>().findWall(floorId, wallId)?.name ??
             '';
         return GridInitPage(
+          siteId: state.pathParameters['siteId']!,
+          buildingId: state.pathParameters['buildingId']!,
+          floorId: floorId,
+          wallId: wallId,
+          wallName: wallName,
+        );
+      },
+    ),
+    GoRoute(
+      path:
+          '/sites/:siteId/buildings/:buildingId/floors/:floorId/walls/:wallId/grid-reshape',
+      builder: (context, state) {
+        final floorId = state.pathParameters['floorId']!;
+        final wallId = state.pathParameters['wallId']!;
+        final wallName =
+            GetIt.instance<SiteRepository>().findWall(floorId, wallId)?.name ??
+            '';
+        return GridReshapePage(
           siteId: state.pathParameters['siteId']!,
           buildingId: state.pathParameters['buildingId']!,
           floorId: floorId,

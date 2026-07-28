@@ -14,12 +14,17 @@ class CaptureScreenHeader extends StatelessWidget {
     required this.subtitle,
     required this.onBack,
     this.subtitleBottomPadding = AppSpacing.lg,
+    this.trailing,
   });
 
   final String title;
   final String subtitle;
   final VoidCallback onBack;
   final double subtitleBottomPadding;
+
+  /// Optional action shown at the end of the title row (e.g. grid-capture's
+  /// reshape entry point). Null for screens that don't need one.
+  final Widget? trailing;
 
   @override
   Widget build(BuildContext context) {
@@ -53,6 +58,7 @@ class CaptureScreenHeader extends StatelessWidget {
                   ).textTheme.titleLarge?.copyWith(fontSize: 20),
                 ),
               ),
+              ?trailing,
             ],
           ),
         ),

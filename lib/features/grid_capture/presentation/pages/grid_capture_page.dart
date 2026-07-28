@@ -5,6 +5,7 @@ import 'package:go_router/go_router.dart';
 
 import '../../../../core/theme/app_spacing.dart';
 import '../../../../core/utils/navigation_extensions.dart';
+import '../../../../core/widgets/circle_icon_button.dart';
 import '../../../../core/widgets/feedback_states.dart';
 import '../../../../core/widgets/primary_action_button.dart';
 import '../../data/datasources/grid_capture_local_data_source.dart';
@@ -101,6 +102,12 @@ class _GridCaptureContent extends StatelessWidget {
           title: state.wall.name,
           subtitle: '${grid.filledCount}/${grid.cells.length} cells covered',
           onBack: () => context.safePop(),
+          trailing: CircleIconButton(
+            icon: Icons.aspect_ratio,
+            onTap: () => context.push(
+              '/sites/$siteId/buildings/$buildingId/floors/$floorId/walls/$wallId/grid-reshape',
+            ),
+          ),
         ),
         Expanded(
           child: Padding(

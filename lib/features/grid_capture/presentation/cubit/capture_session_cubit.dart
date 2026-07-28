@@ -116,6 +116,15 @@ class CaptureSessionCubit extends Cubit<CaptureSessionState> {
     );
   }
 
+  /// Resizes the wall's already-initialized grid. Applies the resulting
+  /// wall to this cubit's own state directly — same reason [takePhoto]
+  /// does: [watchWall]'s stream never re-emits for a session-local change.
+  GridReshapeResult reshapeGrid(int rows, int cols) {
+    final outcome = _repository.reshapeGrid(_floorId, _wallId, rows, cols);
+    if (outcome.wall != null) _onWallChanged(outcome.wall);
+    return outcome.result;
+  }
+
   void openCell(int index) {
     _pendingActiveCellId = index;
     final current = state;
