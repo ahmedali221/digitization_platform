@@ -69,6 +69,12 @@ class WallEntity extends Equatable {
   /// available at every status — label swaps, the action is never disabled.
   bool get hasGrid => grid != null;
 
+  /// An off-map wall added via `AddWallPage`/`SiteRepository.addWall`,
+  /// keyed by a `local_`-prefixed id (`SiteLocalDataSource.addLocalWall`)
+  /// rather than a real server-assigned wall id. These must never enter the
+  /// grid-capture/sync-session pipeline — see `unassigned_walls` feature.
+  bool get isLocal => id.startsWith('local_');
+
   WallEntity copyWith({
     String? name,
     String? notes,

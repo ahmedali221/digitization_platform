@@ -12,4 +12,5 @@ class HiveTypeIds {
   static const int captureCellRecord = 5;
   static const int capturePhotoRecord = 6;
   static const int syncQueueItemRecord = 7;
+  static const int unassignedCaptureRecord = 8;
 }

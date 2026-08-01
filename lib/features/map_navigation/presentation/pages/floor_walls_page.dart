@@ -284,8 +284,13 @@ class _FloorWallsContentState extends State<_FloorWallsContent> {
   }
 
   void _openWallDetail(BuildContext context, WallEntity wall) {
+    final base =
+        '/sites/${widget.siteId}/buildings/${widget.buildingId}/floors/${widget.floorId}';
+    // Off-map (local_id) walls never enter grid-capture/sync-session —
+    // that pipeline requires a real, server-known wall id (see
+    // `UnassignedWallDetailPage`'s doc comment for why).
     context.push(
-      '/sites/${widget.siteId}/buildings/${widget.buildingId}/floors/${widget.floorId}/walls/${wall.id}',
+      wall.isLocal ? '$base/unassigned/${wall.id}' : '$base/walls/${wall.id}',
     );
   }
 

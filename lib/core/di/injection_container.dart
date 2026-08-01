@@ -17,7 +17,9 @@ import '../../features/sync_queue/data/repositories/sync_queue_repository_impl.d
 import '../../features/sync_queue/domain/repositories/sync_enqueuer.dart';
 import '../../features/sync_queue/domain/repositories/sync_queue_repository.dart';
 import '../../features/sync_queue/domain/services/sync_queue_runner.dart';
-import '../../features/unassigned_walls/data/repositories/fake_unassigned_wall_repository.dart';
+import '../../features/unassigned_walls/data/datasources/unassigned_capture_local_data_source.dart';
+import '../../features/unassigned_walls/data/datasources/unassigned_wall_remote_data_source.dart';
+import '../../features/unassigned_walls/data/repositories/unassigned_wall_repository_impl.dart';
 import '../../features/unassigned_walls/domain/repositories/unassigned_wall_repository.dart';
 import '../data/datasources/site_local_data_source.dart';
 import '../data/datasources/site_remote_data_source.dart';
@@ -37,9 +39,7 @@ import '../storage/secure_token_storage.dart';
 final GetIt sl = GetIt.instance;
 
 /// Registers the real local-first data layer (Hive + Dio) behind the same
-/// abstract repository contracts the UI was already built against. Only
-/// `UnassignedWallRepository` still resolves to its fake — Phase 5's
-/// local_id server-side resolution is explicitly out of scope for now.
+/// abstract repository contracts the UI was already built against.
 void setupDependencies() {
   if (GetIt.instance.isRegistered<SiteRepository>()) return;
 
@@ -151,8 +151,24 @@ void setupDependencies() {
     ),
   );
 
+  GetIt.instance.registerLazySingleton<UnassignedCaptureLocalDataSource>(
+    () => UnassignedCaptureLocalDataSource(
+      directoryManager: GetIt.instance<DirectoryManager>(),
+    ),
+  );
+  GetIt.instance.registerLazySingleton<UnassignedWallRemoteDataSource>(
+    () => UnassignedWallRemoteDataSource(GetIt.instance<Dio>()),
+  );
   GetIt.instance.registerLazySingleton<UnassignedWallRepository>(
-    () => FakeUnassignedWallRepository(),
+    () => UnassignedWallRepositoryImpl(
+      siteLocal: GetIt.instance<SiteLocalDataSource>(),
+      siteRepository: GetIt.instance<SiteRepository>(),
+      captureLocal: GetIt.instance<UnassignedCaptureLocalDataSource>(),
+      remote: GetIt.instance<UnassignedWallRemoteDataSource>(),
+      deviceIdProvider: GetIt.instance<DeviceIdProvider>(),
+      sessionLocal: GetIt.instance<CaptureSessionLocalDataSource>(),
+      syncEnqueuer: GetIt.instance<SyncEnqueuer>(),
+    ),
   );
 }
 
@@ -173,6 +189,7 @@ void wireForegroundSyncOnReconnect() {
   ) {
     if (connected) {
       GetIt.instance<SyncQueueRunner>().drainAll();
+      GetIt.instance<UnassignedWallRepository>().checkAllResolutions();
     }
   });
 }

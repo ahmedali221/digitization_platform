@@ -2,6 +2,7 @@ import 'package:hive_flutter/hive_flutter.dart';
 
 import '../../features/grid_capture/data/models/capture_session_record.dart';
 import '../../features/sync_queue/data/models/sync_queue_item_record.dart';
+import '../../features/unassigned_walls/data/models/unassigned_capture_record.dart';
 import '../data/models/floor_package_record.dart';
 import '../data/models/id_mapping_record.dart';
 import '../data/models/site_package_record.dart';
@@ -22,6 +23,7 @@ class HiveBoxes {
   static const String fieldNotes = 'field_notes';
   static const String idMappings = 'id_mappings';
   static const String device = 'device';
+  static const String unassignedCaptures = 'unassigned_captures';
 }
 
 /// Registers every `@HiveType` adapter and opens every box. Called once at
@@ -36,6 +38,7 @@ Future<void> registerAdaptersAndOpenBoxes() async {
   Hive.registerAdapter(CaptureCellRecordAdapter());
   Hive.registerAdapter(CaptureSessionRecordAdapter());
   Hive.registerAdapter(SyncQueueItemRecordAdapter());
+  Hive.registerAdapter(UnassignedCaptureRecordAdapter());
 
   await Future.wait([
     Hive.openBox<SitePackageRecord>(HiveBoxes.sites),
@@ -47,5 +50,6 @@ Future<void> registerAdaptersAndOpenBoxes() async {
     Hive.openBox(HiveBoxes.fieldNotes),
     Hive.openBox<IdMappingRecord>(HiveBoxes.idMappings),
     Hive.openBox(HiveBoxes.device),
+    Hive.openBox<UnassignedCaptureRecord>(HiveBoxes.unassignedCaptures),
   ]);
 }

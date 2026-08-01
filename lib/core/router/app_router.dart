@@ -14,6 +14,8 @@ import '../../features/map_navigation/presentation/pages/floors_list_page.dart';
 import '../../features/map_navigation/presentation/pages/wall_detail_page.dart';
 import '../../features/site_sync/presentation/pages/sites_list_page.dart';
 import '../../features/sync_queue/presentation/pages/sync_queue_page.dart';
+import '../../features/unassigned_walls/presentation/pages/unassigned_camera_page.dart';
+import '../../features/unassigned_walls/presentation/pages/unassigned_wall_detail_page.dart';
 import '../../features/unassigned_walls/presentation/pages/unassigned_walls_page.dart';
 import '../domain/repositories/site_repository.dart';
 import '../network/session_notifier.dart';
@@ -139,6 +141,26 @@ final GoRouter appRouter = GoRouter(
     GoRoute(
       path: '/unassigned',
       builder: (context, state) => const UnassignedWallsPage(),
+    ),
+    GoRoute(
+      path:
+          '/sites/:siteId/buildings/:buildingId/floors/:floorId/unassigned/:localId',
+      builder: (context, state) => UnassignedWallDetailPage(
+        siteId: state.pathParameters['siteId']!,
+        buildingId: state.pathParameters['buildingId']!,
+        floorId: state.pathParameters['floorId']!,
+        localId: state.pathParameters['localId']!,
+      ),
+    ),
+    GoRoute(
+      path:
+          '/sites/:siteId/buildings/:buildingId/floors/:floorId/unassigned/:localId/camera',
+      builder: (context, state) => UnassignedCameraPage(
+        siteId: state.pathParameters['siteId']!,
+        buildingId: state.pathParameters['buildingId']!,
+        floorId: state.pathParameters['floorId']!,
+        localId: state.pathParameters['localId']!,
+      ),
     ),
   ],
 );

@@ -51,6 +51,8 @@ class SiteLocalDataSource {
   Future<void> putFloor(FloorPackageRecord record) =>
       _floorsBox.put(record.floorId, record);
 
+  FloorPackageRecord? getFloor(String floorId) => _floorsBox.get(floorId);
+
   Map<String, WallStatusRecord> allWallStatus() => {
     for (final record in _wallStatusBox.values) record.wallId: record,
   };
@@ -89,6 +91,18 @@ class SiteLocalDataSource {
       if (value['floorId'] == floorId) {
         result[key as String] = value;
       }
+    }
+    return result;
+  }
+
+  /// Every locally-added wall stub across all floors, keyed by `local_id` —
+  /// the unassigned-walls feature's source of truth for "which off-map
+  /// walls exist," independent of which floor each one belongs to.
+  Map<String, Map<String, dynamic>> allLocalWalls() {
+    final result = <String, Map<String, dynamic>>{};
+    for (final key in _unassignedBox.keys) {
+      result[key as String] = (_unassignedBox.get(key) as Map)
+          .cast<String, dynamic>();
     }
     return result;
   }

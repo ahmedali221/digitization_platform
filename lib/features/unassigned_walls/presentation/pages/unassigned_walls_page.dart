@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
+import 'package:go_router/go_router.dart';
 
 import '../../../../core/di/injection_container.dart';
 import '../../../../core/theme/app_colors.dart';
@@ -20,10 +21,10 @@ import '../widgets/unassigned_wall_card.dart';
 /// here rather than added to the shared token file speculatively.
 const double _kPageHorizontalPadding = 20;
 
-/// Phase 5 — list of walls captured before a room/zone was assigned. Linking
-/// a card to a real wall requires the server-side resolution endpoint, so
-/// this screen is read-only for now (capture flow is explicitly out of scope
-/// per FLUTTER_MOBILE_PLAN.md until that endpoint exists).
+/// Phase 5 — list of walls captured before a room/zone was assigned. Tapping
+/// a card opens `UnassignedWallDetailPage`, where capture/sync/resolution
+/// actually happen; resolving a card to a real wall itself still happens on
+/// the dashboard (`UnassignedWallController`), not here.
 class UnassignedWallsPage extends StatelessWidget {
   const UnassignedWallsPage({super.key});
 
@@ -55,8 +56,8 @@ class _UnassignedWallsView extends StatelessWidget {
                 AppSpacing.md,
               ),
               child: Text(
-                'Captured before a room was assigned — link these to a wall '
-                'when back online',
+                'Captured before a room was assigned — sync these and link '
+                'them to a wall once back online',
                 style: Theme.of(context).textTheme.bodyMedium?.copyWith(
                   color: AppColors.onSurfaceMuted,
                 ),
@@ -136,8 +137,16 @@ class _Body extends StatelessWidget {
           ),
           itemCount: items.length,
           separatorBuilder: (_, _) => const SizedBox(height: 10),
-          itemBuilder: (context, index) =>
-              UnassignedWallCard(item: items[index]),
+          itemBuilder: (context, index) {
+            final item = items[index];
+            return UnassignedWallCard(
+              item: item,
+              onTap: () => context.push(
+                '/sites/${item.siteId}/buildings/${item.buildingId}'
+                '/floors/${item.floorId}/unassigned/${item.localId}',
+              ),
+            );
+          },
         );
       },
     );
