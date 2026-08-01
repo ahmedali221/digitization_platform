@@ -1,5 +1,7 @@
 import 'dart:async';
 
+import 'package:flutter/foundation.dart';
+
 import '../../domain/entities/sync_item.dart';
 import '../../domain/repositories/sync_enqueuer.dart';
 import '../../domain/repositories/sync_queue_repository.dart';
@@ -34,11 +36,25 @@ class SyncQueueRepositoryImpl implements SyncQueueRepository, SyncEnqueuer {
   }
 
   @override
+  Future<void> discard(String id) => _local.delete(id);
+
+  @override
   Future<void> enqueueSession({
     required String wallId,
     required String siteId,
     required String displayName,
   }) async {
+    if (wallId.startsWith('local_')) {
+      // A local-only wall id has no corresponding `walls` row on the server
+      // yet — the sync endpoints will always 422 it. Callers must resolve
+      // it via features/unassigned_walls before enqueueing a session.
+      debugPrint(
+        'SyncQueueRepositoryImpl: refusing to enqueue unresolved local wall '
+        '$wallId',
+      );
+      return;
+    }
+
     final existing = _local.get(wallId);
     await _local.put(
       SyncQueueItemRecord(
@@ -71,5 +87,6 @@ class SyncQueueRepositoryImpl implements SyncQueueRepository, SyncEnqueuer {
       _ => SyncItemStatus.queued,
     },
     progress: record.progress,
+    reason: record.lastError,
   );
 }

@@ -62,16 +62,24 @@ class SyncQueueItemTile extends StatelessWidget {
     super.key,
     required this.item,
     required this.onRetry,
+    this.onResolve,
   });
 
   final SyncItem item;
   final VoidCallback onRetry;
+
+  /// Present only for a failed item whose id is an orphaned pre-fix local
+  /// wall (see `WallEntity.isLocal`'s same `local_` convention) — such an
+  /// item can never succeed via [onRetry] (nothing to retry against), so the
+  /// tile offers this recovery action instead.
+  final VoidCallback? onResolve;
 
   @override
   Widget build(BuildContext context) {
     final meta = _kSyncStatusMeta[item.status]!;
     final isUploading = item.status == SyncItemStatus.uploading;
     final isFailed = item.status == SyncItemStatus.failed;
+    final isOrphanedLocalWall = item.id.startsWith('local_');
 
     return Container(
       padding: const EdgeInsets.symmetric(
@@ -106,8 +114,20 @@ class SyncQueueItemTile extends StatelessWidget {
             ThinProgressBar(progress: item.progress / 100),
           ],
           if (isFailed) ...[
+            if (item.reason case final reason?) ...[
+              const SizedBox(height: AppSpacing.xs),
+              Text(
+                reason,
+                style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                  color: AppColors.onSurfaceMuted,
+                ),
+              ),
+            ],
             const SizedBox(height: AppSpacing.sm),
-            _RetryButton(onTap: onRetry),
+            if (isOrphanedLocalWall && onResolve != null)
+              _RetryButton(label: 'Resolve', onTap: onResolve!)
+            else
+              _RetryButton(onTap: onRetry),
           ],
         ],
       ),
@@ -151,11 +171,13 @@ class _StatusPill extends StatelessWidget {
 /// "Retry" is a bare 13px text link in the prototype; wrapped here in a
 /// padded, 48x48dp-minimum tap target per DESIGN_SYSTEM.md §9 ("no
 /// exceptions"), which makes a failed tile render slightly taller than the
-/// prototype's literal spacing.
+/// prototype's literal spacing. Reused for "Resolve" (same shape, different
+/// action) on an orphaned local-id item.
 class _RetryButton extends StatelessWidget {
-  const _RetryButton({required this.onTap});
+  const _RetryButton({required this.onTap, this.label = 'Retry'});
 
   final VoidCallback onTap;
+  final String label;
 
   @override
   Widget build(BuildContext context) {
@@ -171,7 +193,7 @@ class _RetryButton extends StatelessWidget {
             padding: const EdgeInsets.symmetric(horizontal: AppSpacing.xs),
             alignment: Alignment.centerLeft,
             child: Text(
-              'Retry',
+              label,
               style: Theme.of(context).textTheme.labelSmall?.copyWith(
                 fontSize: 13,
                 color: AppColors.seed,

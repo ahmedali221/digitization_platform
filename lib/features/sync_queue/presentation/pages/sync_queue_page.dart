@@ -2,15 +2,18 @@ import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 
 import '../../../../core/di/injection_container.dart';
+import '../../../../core/domain/repositories/site_repository.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../../../core/theme/app_spacing.dart';
 import '../../../../core/utils/navigation_extensions.dart';
 import '../../../../core/widgets/circle_icon_button.dart';
 import '../../../../core/widgets/feedback_states.dart';
+import '../../../unassigned_walls/domain/repositories/unassigned_wall_repository.dart';
 import '../../domain/repositories/sync_queue_repository.dart';
 import '../../domain/services/sync_queue_runner.dart';
 import '../cubit/sync_queue_cubit.dart';
 import '../cubit/sync_queue_state.dart';
+import '../widgets/select_site_dialog.dart';
 import '../widgets/sync_queue_item_tile.dart';
 
 class SyncQueuePage extends StatelessWidget {
@@ -19,8 +22,11 @@ class SyncQueuePage extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return BlocProvider(
-      create: (_) =>
-          SyncQueueCubit(sl<SyncQueueRepository>(), sl<SyncQueueRunner>()),
+      create: (_) => SyncQueueCubit(
+        sl<SyncQueueRepository>(),
+        sl<SyncQueueRunner>(),
+        sl<UnassignedWallRepository>(),
+      ),
       child: const _SyncQueueView(),
     );
   }
@@ -62,6 +68,10 @@ class _SyncQueueView extends StatelessWidget {
                           item: item,
                           onRetry: () =>
                               context.read<SyncQueueCubit>().retry(item.id),
+                          onResolve: () => _resolveOrphanedWall(
+                            context,
+                            wallId: item.id,
+                          ),
                         );
                       },
                     );
@@ -71,6 +81,44 @@ class _SyncQueueView extends StatelessWidget {
               ),
             ),
           ],
+        ),
+      ),
+    );
+  }
+
+  Future<void> _resolveOrphanedWall(
+    BuildContext context, {
+    required String wallId,
+  }) async {
+    final cubit = context.read<SyncQueueCubit>();
+    final sites = await sl<SiteRepository>().watchSites().first;
+    if (!context.mounted) return;
+
+    final siteId = await showSelectSiteDialog(context: context, sites: sites);
+    if (siteId == null || !context.mounted) return;
+
+    showDialog<void>(
+      context: context,
+      barrierDismissible: false,
+      builder: (_) => const Center(child: CircularProgressIndicator()),
+    );
+
+    String? error;
+    try {
+      await cubit.resolveOrphanedWall(wallId, siteId);
+    } catch (e) {
+      error = e.toString();
+    }
+    if (!context.mounted) return;
+    Navigator.of(context, rootNavigator: true).pop();
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(
+          error == null
+              ? 'Registered — it can now be resolved from the dashboard, '
+                    'then uploaded from Unassigned Walls.'
+              : 'Could not resolve this wall: $error',
         ),
       ),
     );

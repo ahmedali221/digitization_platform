@@ -17,4 +17,6 @@ class SyncQueueLocalDataSource {
   SyncQueueItemRecord? get(String id) => _box.get(id);
 
   Future<void> put(SyncQueueItemRecord record) => _box.put(record.id, record);
+
+  Future<void> delete(String id) => _box.delete(id);
 }

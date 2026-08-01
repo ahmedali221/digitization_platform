@@ -21,8 +21,20 @@ abstract class UnassignedWallRepository {
   Future<void> removeShot(String localId, String filePath);
 
   /// `POST /sync/unassigned` — registers/refreshes this capture's metadata
-  /// server-side. Idempotent on `(local_id, site_id)`.
-  Future<void> syncMetadata(String localId);
+  /// server-side. Idempotent on `(local_id, site_id)`. [siteId] overrides the
+  /// site normally derived from the wall's floor — used when recovering a
+  /// wall whose cached floor→site mapping is stale (see
+  /// [migrateOrphanedGridCapture]).
+  Future<void> syncMetadata(String localId, {String? siteId});
+
+  /// Recovers a wall captured through the old grid-capture pipeline before
+  /// it was routed to this feature (pre-fix local-id walls, left stuck in
+  /// the sync queue with a "wall id must be an integer" 422): copies its
+  /// already-taken photos out of the stale `CaptureSessionRecord` and into
+  /// [localId]'s flat capture record, so it can go through the normal
+  /// [syncMetadata]/[checkResolution]/[promoteToRealWall] flow without the
+  /// operator retaking anything. No-op if there's no such leftover session.
+  Future<void> migrateOrphanedGridCapture(String localId);
 
   /// `GET /sync/mappings` for this device — persists a resolved `wall_id`
   /// via `IdMappingRecord` if one now exists for [localId].

@@ -80,23 +80,24 @@ class UnassignedWallRepositoryImpl implements UnassignedWallRepository {
   }
 
   @override
-  Future<void> syncMetadata(String localId) async {
+  Future<void> syncMetadata(String localId, {String? siteId}) async {
     final stub = _siteLocal.allLocalWalls()[localId];
     if (stub == null) return;
 
     final floorId = stub['floorId'] as String;
-    final siteId = _siteLocal.getFloor(floorId)?.siteId ?? '';
+    final resolvedSiteId =
+        siteId ?? _siteLocal.getFloor(floorId)?.siteId ?? '';
     final deviceId = await _deviceIdProvider.getOrCreateDeviceId();
     final notes = stub['notes'] as String?;
     final capture = await _captureLocal.ensure(
       localId: localId,
-      siteId: siteId,
+      siteId: resolvedSiteId,
       floorId: floorId,
     );
 
     await _remote.syncUnassigned(
       localId: localId,
-      siteId: siteId,
+      siteId: resolvedSiteId,
       deviceId: deviceId,
       notes: notes,
       capturedAt: capture.createdAt,
@@ -105,6 +106,32 @@ class UnassignedWallRepositoryImpl implements UnassignedWallRepository {
     capture.syncStatus = 'awaitingResolution';
     capture.lastSyncedAt = DateTime.now();
     await capture.save();
+  }
+
+  @override
+  Future<void> migrateOrphanedGridCapture(String localId) async {
+    final session = _sessionLocal.get(localId);
+    if (session == null) return;
+
+    final stub = _siteLocal.allLocalWalls()[localId];
+    final floorId = stub?['floorId'] as String? ?? session.floorId;
+    final capture = await _captureLocal.ensure(
+      localId: localId,
+      siteId: session.siteId,
+      floorId: floorId,
+    );
+
+    final alreadyMigrated = capture.shots.toSet();
+    for (final cell in session.cells) {
+      for (final photo in cell.photos) {
+        if (alreadyMigrated.contains(photo.file)) continue;
+        await _captureLocal.recordShot(
+          localId: localId,
+          filePath: photo.file,
+          sha256: photo.sha256,
+        );
+      }
+    }
   }
 
   @override

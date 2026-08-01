@@ -8,4 +8,10 @@ abstract class SyncQueueRepository {
   Stream<List<SyncItem>> watchQueue();
 
   void retry(String id);
+
+  /// Permanently removes a queue item without attempting to sync it — used
+  /// once an item's underlying wall has been recovered through
+  /// [UnassignedWallRepository.migrateOrphanedGridCapture], making the
+  /// original (unsyncable) entry redundant.
+  Future<void> discard(String id);
 }

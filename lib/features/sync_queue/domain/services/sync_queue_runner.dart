@@ -51,6 +51,19 @@ class SyncQueueRunner {
   }
 
   Future<void> _drainOne(SyncQueueItemRecord item) async {
+    if (item.wallId.startsWith('local_')) {
+      // Leftover from before this wall was routed through
+      // features/unassigned_walls (or a pre-fix build) — the server will
+      // always 422 this id, so fail it locally instead of hitting the
+      // network with a request that can never succeed.
+      item.status = 'failed';
+      item.lastError =
+          "This wall hasn't been linked to a site wall yet — tap Resolve "
+          'to choose its site so it can be reviewed on the dashboard.';
+      await _queueLocal.put(item);
+      return;
+    }
+
     final session = _sessionLocal.get(item.wallId);
     if (session == null) {
       item.status = 'failed';
