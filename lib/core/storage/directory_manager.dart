@@ -20,6 +20,10 @@ class DirectoryManager {
   final DiskSpacePlus _diskSpace;
   Directory? _docsDir;
 
+  /// Top-level segments a stored path can be re-anchored from — see
+  /// [resolveExistingFile].
+  static const _knownRoots = {'sessions', 'backup', 'packages', 'thumbs'};
+
   /// Resolves and caches the app documents directory once. Callers that only
   /// ever await a directory method don't need this — but `MapGeometryMapper`
   /// mirrors `SiteRepository`'s synchronous find*() methods, so it needs the
@@ -66,6 +70,28 @@ class DirectoryManager {
     if (await dir.exists()) {
       await dir.delete(recursive: true);
     }
+  }
+
+  /// Re-anchors [storedPath] against the current documents root if it no
+  /// longer resolves as stored. On iOS, the sandbox container's UUID
+  /// segment can change between app launches (most commonly after an
+  /// app-store/TestFlight update) even though the `Documents` subtree's
+  /// contents carry over — so a path saved under the old container goes
+  /// stale while the file itself is still on disk, just under a new
+  /// absolute prefix. Returns null if the file can't be found either way.
+  Future<File?> resolveExistingFile(String storedPath) async {
+    final direct = File(storedPath);
+    if (await direct.exists()) return direct;
+
+    final docsDir = _docsDir ??= await getApplicationDocumentsDirectory();
+    final segments = p.split(storedPath);
+    final rootIndex = segments.indexWhere(_knownRoots.contains);
+    if (rootIndex == -1) return null;
+
+    final relocated = File(
+      p.joinAll([docsDir.path, ...segments.sublist(rootIndex)]),
+    );
+    return await relocated.exists() ? relocated : null;
   }
 
   Future<int> freeSpaceBytes() async {

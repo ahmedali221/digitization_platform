@@ -190,7 +190,7 @@ class UnassignedWallRepositoryImpl implements UnassignedWallRepository {
 
   @override
   Future<void> promoteToRealWall(String localId) async {
-    final capture = _captureLocal.get(localId);
+    final capture = await _captureLocal.healPaths(localId);
     final resolvedWallId = capture?.resolvedWallId;
     if (capture == null || resolvedWallId == null || capture.shots.isEmpty) {
       return;

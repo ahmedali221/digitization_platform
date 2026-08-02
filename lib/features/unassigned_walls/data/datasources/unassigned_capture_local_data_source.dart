@@ -79,11 +79,37 @@ class UnassignedCaptureLocalDataSource {
     required String localId,
     required String filePath,
   }) async {
-    final sessionFile = File(filePath);
+    final sessionFile =
+        await _directoryManager.resolveExistingFile(filePath) ??
+        File(filePath);
     if (await sessionFile.exists()) await sessionFile.delete();
     final backupDir = await _directoryManager.backupDir(localId);
     final backupFile = File(p.join(backupDir.path, p.basename(filePath)));
     if (await backupFile.exists()) await backupFile.delete();
+  }
+
+  /// Re-anchors any stale absolute paths in [localId]'s shots against the
+  /// current documents root (see `DirectoryManager.resolveExistingFile`)
+  /// and persists the correction, so a given stale path only ever needs
+  /// resolving once. Paths that can't be found under either root are left
+  /// as-is — the UI falls back to a placeholder for those.
+  Future<UnassignedCaptureRecord?> healPaths(String localId) async {
+    final record = _box.get(localId);
+    if (record == null) return null;
+
+    var changed = false;
+    final healedShots = <String>[];
+    for (final path in record.shots) {
+      final resolved = await _directoryManager.resolveExistingFile(path);
+      final healedPath = resolved?.path ?? path;
+      if (healedPath != path) changed = true;
+      healedShots.add(healedPath);
+    }
+    if (changed) {
+      record.shots = healedShots;
+      await record.save();
+    }
+    return record;
   }
 
   Future<UnassignedCaptureRecord> recordShot({

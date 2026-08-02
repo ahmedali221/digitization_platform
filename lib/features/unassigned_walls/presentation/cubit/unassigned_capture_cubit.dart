@@ -31,6 +31,7 @@ class UnassignedCaptureCubit extends Cubit<UnassignedCaptureState> {
         siteId: siteId,
         floorId: floorId,
       );
+      await _localDataSource.healPaths(localId);
       _emitFromRecord();
     } catch (error) {
       emit(UnassignedCaptureError(error.toString()));

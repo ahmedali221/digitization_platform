@@ -96,7 +96,9 @@ class SyncQueueRunner {
       ];
       for (var i = 0; i < photos.length; i++) {
         final entry = photos[i];
-        final image = File(entry.photo.file);
+        final image =
+            await _directoryManager.resolveExistingFile(entry.photo.file) ??
+            File(entry.photo.file);
         await _remote.uploadCellPhoto(
           wallId: item.wallId,
           row: entry.cell.row,
