@@ -2,6 +2,7 @@ import 'dart:io';
 
 import 'package:digitization_platform/core/storage/device_id_provider.dart';
 import 'package:digitization_platform/core/storage/directory_manager.dart';
+import 'package:digitization_platform/core/storage/gallery_backup_service.dart';
 import 'package:digitization_platform/core/storage/hive_boxes.dart';
 import 'package:digitization_platform/features/grid_capture/data/datasources/capture_session_local_data_source.dart';
 import 'package:digitization_platform/features/sync_queue/data/datasources/sync_queue_local_data_source.dart';
@@ -31,6 +32,7 @@ void main() {
       remote: SyncRemoteDataSource(Dio()),
       deviceIdProvider: DeviceIdProvider(),
       directoryManager: DirectoryManager(),
+      galleryBackup: GalleryBackupService(),
     );
     repository = SyncQueueRepositoryImpl(SyncQueueLocalDataSource(), runner);
   });

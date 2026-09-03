@@ -5,6 +5,7 @@ import 'package:path/path.dart' as p;
 import '../../../../core/errors/failure.dart';
 import '../../../../core/storage/device_id_provider.dart';
 import '../../../../core/storage/directory_manager.dart';
+import '../../../../core/storage/gallery_backup_service.dart';
 import '../../../grid_capture/data/datasources/capture_session_local_data_source.dart';
 import '../../data/datasources/sync_queue_local_data_source.dart';
 import '../../data/datasources/sync_remote_data_source.dart';
@@ -24,17 +25,20 @@ class SyncQueueRunner {
     required SyncRemoteDataSource remote,
     required DeviceIdProvider deviceIdProvider,
     required DirectoryManager directoryManager,
+    required GalleryBackupService galleryBackup,
   }) : _queueLocal = queueLocal,
        _sessionLocal = sessionLocal,
        _remote = remote,
        _deviceIdProvider = deviceIdProvider,
-       _directoryManager = directoryManager;
+       _directoryManager = directoryManager,
+       _galleryBackup = galleryBackup;
 
   final SyncQueueLocalDataSource _queueLocal;
   final CaptureSessionLocalDataSource _sessionLocal;
   final SyncRemoteDataSource _remote;
   final DeviceIdProvider _deviceIdProvider;
   final DirectoryManager _directoryManager;
+  final GalleryBackupService _galleryBackup;
 
   Future<void> drainAll() async {
     final pending = _queueLocal.all().where(
@@ -119,6 +123,12 @@ class SyncQueueRunner {
       await _queueLocal.put(item);
 
       await _directoryManager.deleteBackup(item.wallId);
+      // Best-effort — see GalleryBackupService's doc comment for why this
+      // has to happen on every confirm, not just be left for later cleanup.
+      await _galleryBackup.deleteWallBackup(
+        siteId: item.siteId,
+        wallId: item.wallId,
+      );
     } on AppException catch (e) {
       item.attempts += 1;
       item.lastError = e.failure.message;

@@ -98,8 +98,12 @@ class _CameraBodyState extends State<_CameraBody> {
         });
         return;
       }
+      final backCamera = cameras.firstWhere(
+        (camera) => camera.lensDirection == CameraLensDirection.back,
+        orElse: () => cameras.first,
+      );
       final controller = CameraController(
-        cameras.first,
+        backCamera,
         ResolutionPreset.high,
         enableAudio: false,
       );

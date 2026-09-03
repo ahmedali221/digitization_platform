@@ -15,6 +15,7 @@ import '../cubit/sites_cubit.dart';
 import '../cubit/sites_state.dart';
 import '../widgets/download_confirm_dialog.dart';
 import '../widgets/site_card.dart';
+import '../widgets/sync_status_icon.dart';
 
 /// The app's initial/home route (`/sites`). Its own `Scaffold` is the only
 /// app-level chrome this screen has — no bottom nav bar here.
@@ -147,10 +148,7 @@ class _Header extends StatelessWidget {
           Row(
             mainAxisSize: MainAxisSize.min,
             children: [
-              CircleIconButton(
-                icon: Icons.sync,
-                onTap: () => context.push('/sync'),
-              ),
+              SyncStatusIcon(onTap: () => context.push('/sync')),
               CircleIconButton(
                 icon: Icons.assignment,
                 onTap: () => context.push('/unassigned'),

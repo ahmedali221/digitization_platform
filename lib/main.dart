@@ -13,8 +13,9 @@ Future<void> main() async {
   await registerAdaptersAndOpenBoxes();
   setupDependencies();
   await sl<DirectoryManager>().init();
+  wireSyncOnLogin();
   await seedInitialSession();
   wireForegroundSyncOnReconnect();
   await initializeSyncBackgroundTask();
-  runApp(const WallBaseApp());
+  runApp(const NileLensApp());
 }

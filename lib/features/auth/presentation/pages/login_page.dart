@@ -66,8 +66,20 @@ class _LoginPageState extends State<LoginPage> {
                     mainAxisSize: MainAxisSize.min,
                     crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: [
+                      Center(
+                        child: ClipRRect(
+                          borderRadius: BorderRadius.circular(AppRadius.card),
+                          child: Image.asset(
+                            'assets/branding/nilelens_icon.png',
+                            width: 96,
+                            height: 96,
+                            fit: BoxFit.cover,
+                          ),
+                        ),
+                      ),
+                      const SizedBox(height: AppSpacing.lg),
                       Text(
-                        'WallBase',
+                        'NileLens',
                         textAlign: TextAlign.center,
                         style: textTheme.headlineMedium,
                       ),

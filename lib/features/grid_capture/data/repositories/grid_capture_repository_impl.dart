@@ -1,10 +1,12 @@
 import 'dart:async';
+import 'dart:io';
 
 import 'package:flutter/foundation.dart';
 
 import '../../../../core/domain/entities/wall.dart';
 import '../../../../core/domain/repositories/site_repository.dart';
 import '../../../../core/storage/directory_manager.dart';
+import '../../../../core/storage/gallery_backup_service.dart';
 import '../../../../core/theme/wall_status.dart';
 import '../../../sync_queue/domain/repositories/sync_enqueuer.dart';
 import '../../domain/repositories/grid_capture_repository.dart';
@@ -24,11 +26,13 @@ class GridCaptureRepositoryImpl implements GridCaptureRepository {
     required GridCaptureLocalDataSource fileLocal,
     required DirectoryManager directoryManager,
     required SyncEnqueuer syncEnqueuer,
+    required GalleryBackupService galleryBackup,
   }) : _siteRepository = siteRepository,
        _sessionLocal = sessionLocal,
        _fileLocal = fileLocal,
        _directoryManager = directoryManager,
-       _syncEnqueuer = syncEnqueuer;
+       _syncEnqueuer = syncEnqueuer,
+       _galleryBackup = galleryBackup;
 
   /// Conservative flat estimate — a proper per-device average (the plan's
   /// "based on the most recently completed session") would need its own
@@ -41,6 +45,7 @@ class GridCaptureRepositoryImpl implements GridCaptureRepository {
   final GridCaptureLocalDataSource _fileLocal;
   final DirectoryManager _directoryManager;
   final SyncEnqueuer _syncEnqueuer;
+  final GalleryBackupService _galleryBackup;
 
   @override
   WallEntity? getWall(String floorId, String wallId) =>
@@ -188,13 +193,14 @@ class GridCaptureRepositoryImpl implements GridCaptureRepository {
 
     final row = cellIndex ~/ session.gridCols;
     final col = cellIndex % session.gridCols;
+    final resolvedShot = shot ?? (session.cellAt(row, col).photos.length + 1);
     session.addPhotoAt(
       row,
       col,
       CapturePhotoRecord(
         file: filePath,
         sha256: sha256 ?? '',
-        shot: shot ?? (session.cellAt(row, col).photos.length + 1),
+        shot: resolvedShot,
         capturedAt: DateTime.now(),
       ),
     );
@@ -203,6 +209,24 @@ class GridCaptureRepositoryImpl implements GridCaptureRepository {
     session.state = 'inProgress';
     session.completedAt = null;
     _sessionLocal.put(session);
+
+    // Best-effort redundant copy outside the app sandbox (see
+    // GalleryBackupService) — fire-and-forget, must never block or fail the
+    // capture flow itself.
+    final resolvedSiteId = _siteIdForFloor(floorId) ?? session.siteId;
+    if (resolvedSiteId.isNotEmpty) {
+      unawaited(
+        _galleryBackup.backupPhoto(
+          siteId: resolvedSiteId,
+          wallId: wallId,
+          row: row,
+          col: col,
+          shot: resolvedShot,
+          file: File(filePath),
+        ),
+      );
+    }
+
     return _overlaySession(_siteRepository.findWall(floorId, wallId));
   }
 

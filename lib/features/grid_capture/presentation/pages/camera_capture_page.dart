@@ -133,8 +133,12 @@ class _CameraBodyState extends State<_CameraBody> {
         });
         return;
       }
+      final backCamera = cameras.firstWhere(
+        (camera) => camera.lensDirection == CameraLensDirection.back,
+        orElse: () => cameras.first,
+      );
       final controller = CameraController(
-        cameras.first,
+        backCamera,
         ResolutionPreset.high,
         enableAudio: false,
       );
@@ -186,8 +190,6 @@ class _CameraBodyState extends State<_CameraBody> {
     if (details.pointerCount < 2) return;
     _requestZoom(_baseZoom * details.scale);
   }
-
-  void _zoomBy(double delta) => _requestZoom(_currentZoom + delta);
 
   void _requestZoom(double requestedZoom) {
     if (_loadState != _CameraLoadState.ready) return;
@@ -334,16 +336,16 @@ class _CameraBodyState extends State<_CameraBody> {
                   ),
                 ),
               ),
-              if (_loadState == _CameraLoadState.ready &&
-                  _maximumZoom > _minimumZoom)
+              if (_loadState ==
+                  _CameraLoadState
+                      .ready) // TODO: restore `&& _maximumZoom > _minimumZoom` guard once done testing on emulator
                 Positioned(
                   bottom: AppSpacing.md,
-                  child: _ZoomControls(
-                    zoom: _currentZoom,
-                    canZoomOut: _currentZoom > _minimumZoom + 0.01,
-                    canZoomIn: _currentZoom < _maximumZoom - 0.01,
-                    onZoomOut: () => _zoomBy(-0.5),
-                    onZoomIn: () => _zoomBy(0.5),
+                  child: _ZoomPresets(
+                    currentZoom: _currentZoom,
+                    minimumZoom: _minimumZoom,
+                    maximumZoom: _maximumZoom,
+                    onSelect: _requestZoom,
                   ),
                 ),
             ],
@@ -467,64 +469,112 @@ class _DarkPill extends StatelessWidget {
   }
 }
 
-class _ZoomControls extends StatelessWidget {
-  const _ZoomControls({
-    required this.zoom,
-    required this.canZoomOut,
-    required this.canZoomIn,
-    required this.onZoomOut,
-    required this.onZoomIn,
+/// Quick-select zoom pills (0.5x / 1x / 2x), like a stock phone camera app,
+/// on top of the continuous pinch-to-zoom gesture on the viewfinder. Presets
+/// outside the device's actual [minimumZoom, maximumZoom] range are hidden —
+/// e.g. 0.5x only appears on hardware whose camera stack can actually reach
+/// an ultra-wide lens.
+class _ZoomPresets extends StatelessWidget {
+  const _ZoomPresets({
+    required this.currentZoom,
+    required this.minimumZoom,
+    required this.maximumZoom,
+    required this.onSelect,
   });
 
-  final double zoom;
-  final bool canZoomOut;
-  final bool canZoomIn;
-  final VoidCallback onZoomOut;
-  final VoidCallback onZoomIn;
+  final double currentZoom;
+  final double minimumZoom;
+  final double maximumZoom;
+  final ValueChanged<double> onSelect;
+
+  static const List<double> _presetLevels = [0.5, 1, 2];
+  static const double _matchTolerance = 0.05;
 
   @override
   Widget build(BuildContext context) {
-    return Material(
-      color: AppColors.cameraScrim,
-      borderRadius: BorderRadius.circular(AppRadius.chip),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          IconButton(
-            key: const ValueKey('camera-zoom-out'),
-            tooltip: 'Zoom out',
-            onPressed: canZoomOut ? onZoomOut : null,
-            icon: const Icon(Icons.remove),
-            color: Colors.white,
-            disabledColor: Colors.white38,
+    final availablePresets = _presetLevels
+        .where(
+          (level) =>
+              level >= minimumZoom - _matchTolerance &&
+              level <= maximumZoom + _matchTolerance,
+        )
+        .toList();
+
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Semantics(
+          liveRegion: true,
+          label: 'Camera zoom ${currentZoom.toStringAsFixed(1)} times',
+          child: _DarkPill(label: '${currentZoom.toStringAsFixed(1)}×'),
+        ),
+        const SizedBox(height: AppSpacing.xs),
+        Material(
+          color: AppColors.cameraScrim,
+          borderRadius: BorderRadius.circular(AppRadius.chip),
+          child: Padding(
+            padding: const EdgeInsets.all(4),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                for (final level in availablePresets)
+                  _ZoomPresetPill(
+                    key: ValueKey('camera-zoom-preset-$level'),
+                    level: level,
+                    selected: (currentZoom - level).abs() < _matchTolerance,
+                    onTap: () => onSelect(level),
+                  ),
+              ],
+            ),
           ),
-          Semantics(
-            liveRegion: true,
-            label: 'Camera zoom ${zoom.toStringAsFixed(1)} times',
-            child: SizedBox(
-              width: 48,
-              child: Text(
-                '${zoom.toStringAsFixed(1)}×',
-                key: const ValueKey('camera-zoom-level'),
-                textAlign: TextAlign.center,
-                style: Theme.of(context).textTheme.labelLarge?.copyWith(
-                  color: Colors.white,
-                  fontWeight: FontWeight.w700,
-                ),
+        ),
+      ],
+    );
+  }
+}
+
+class _ZoomPresetPill extends StatelessWidget {
+  const _ZoomPresetPill({
+    super.key,
+    required this.level,
+    required this.selected,
+    required this.onTap,
+  });
+
+  final double level;
+  final bool selected;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      width: 40,
+      height: 40,
+      child: Material(
+        color: selected ? Colors.white : Colors.transparent,
+        shape: const CircleBorder(),
+        child: InkWell(
+          onTap: onTap,
+          customBorder: const CircleBorder(),
+          child: Center(
+            child: Text(
+              _label(level),
+              style: TextStyle(
+                color: selected ? AppColors.cameraBackground : Colors.white,
+                fontWeight: FontWeight.w700,
+                fontSize: 13,
               ),
             ),
           ),
-          IconButton(
-            key: const ValueKey('camera-zoom-in'),
-            tooltip: 'Zoom in',
-            onPressed: canZoomIn ? onZoomIn : null,
-            icon: const Icon(Icons.add),
-            color: Colors.white,
-            disabledColor: Colors.white38,
-          ),
-        ],
+        ),
       ),
     );
+  }
+
+  static String _label(double level) {
+    if (level < 1) return '${level.toStringAsFixed(1).substring(1)}×';
+    if (level == level.roundToDouble()) return '${level.toInt()}×';
+    return '${level.toStringAsFixed(1)}×';
   }
 }
 

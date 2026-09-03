@@ -8,6 +8,7 @@ import '../../features/grid_capture/data/datasources/capture_session_local_data_
 import '../../features/grid_capture/data/datasources/grid_capture_local_data_source.dart';
 import '../../features/grid_capture/data/repositories/grid_capture_repository_impl.dart';
 import '../../features/grid_capture/domain/repositories/grid_capture_repository.dart';
+import '../../features/grid_capture/domain/services/capture_recovery_service.dart';
 import '../../features/map_navigation/data/repositories/map_geometry_repository_impl.dart';
 import '../../features/map_navigation/domain/repositories/map_geometry_repository.dart';
 import '../../features/site_sync/domain/services/site_download_service.dart';
@@ -29,8 +30,10 @@ import '../network/api_client.dart';
 import '../network/auth_interceptor.dart';
 import '../network/connectivity_observer.dart';
 import '../network/file_downloader.dart';
+import '../network/session_notifier.dart';
 import '../storage/device_id_provider.dart';
 import '../storage/directory_manager.dart';
+import '../storage/gallery_backup_service.dart';
 import '../storage/secure_token_storage.dart';
 
 /// Shorthand for [GetIt.instance], kept as a top-level constant so feature
@@ -52,6 +55,9 @@ void setupDependencies() {
   GetIt.instance.registerLazySingleton<DeviceIdProvider>(
     () => DeviceIdProvider(),
   );
+  GetIt.instance.registerLazySingleton<GalleryBackupService>(
+    () => GalleryBackupService(),
+  );
   GetIt.instance.registerLazySingleton<ConnectivityObserver>(
     () => ConnectivityObserver(),
   );
@@ -70,6 +76,7 @@ void setupDependencies() {
     () => AuthRepositoryImpl(
       remote: GetIt.instance<AuthRemoteDataSource>(),
       tokenStorage: GetIt.instance<SecureTokenStorage>(),
+      deviceIdProvider: GetIt.instance<DeviceIdProvider>(),
     ),
   );
 
@@ -121,6 +128,7 @@ void setupDependencies() {
       remote: GetIt.instance<SyncRemoteDataSource>(),
       deviceIdProvider: GetIt.instance<DeviceIdProvider>(),
       directoryManager: GetIt.instance<DirectoryManager>(),
+      galleryBackup: GetIt.instance<GalleryBackupService>(),
     ),
   );
   GetIt.instance.registerLazySingleton<SyncQueueRepositoryImpl>(
@@ -146,6 +154,15 @@ void setupDependencies() {
       siteRepository: GetIt.instance<SiteRepository>(),
       sessionLocal: GetIt.instance<CaptureSessionLocalDataSource>(),
       fileLocal: GetIt.instance<GridCaptureLocalDataSource>(),
+      directoryManager: GetIt.instance<DirectoryManager>(),
+      syncEnqueuer: GetIt.instance<SyncEnqueuer>(),
+      galleryBackup: GetIt.instance<GalleryBackupService>(),
+    ),
+  );
+  GetIt.instance.registerLazySingleton<CaptureRecoveryService>(
+    () => CaptureRecoveryService(
+      galleryBackup: GetIt.instance<GalleryBackupService>(),
+      sessionLocal: GetIt.instance<CaptureSessionLocalDataSource>(),
       directoryManager: GetIt.instance<DirectoryManager>(),
       syncEnqueuer: GetIt.instance<SyncEnqueuer>(),
     ),
@@ -191,5 +208,25 @@ void wireForegroundSyncOnReconnect() {
       GetIt.instance<SyncQueueRunner>().drainAll();
       GetIt.instance<UnassignedWallRepository>().checkAllResolutions();
     }
+  });
+}
+
+/// Drains the sync queue every time a session becomes active — a fresh
+/// login, or [seedInitialSession] confirming a session already on disk at
+/// boot. [SyncQueueRunner.drainAll] already skips anything already
+/// `confirmed`, so this is a no-op when everything's already synced and an
+/// immediate upload attempt when it isn't, rather than waiting for a
+/// reconnect event or the next 15-minute background tick. Must be wired
+/// before [seedInitialSession] runs so it's already listening for that
+/// first transition.
+void wireSyncOnLogin() {
+  isLoggedInNotifier.addListener(() async {
+    if (!isLoggedInNotifier.value) return;
+    // Recover anything the gallery still has a backup copy of but the local
+    // `sessions` box doesn't (see CaptureRecoveryService) before draining,
+    // so a session recovered from a reinstall gets uploaded in this same
+    // pass rather than waiting for the next trigger.
+    await GetIt.instance<CaptureRecoveryService>().recoverOrphanedWalls();
+    await GetIt.instance<SyncQueueRunner>().drainAll();
   });
 }

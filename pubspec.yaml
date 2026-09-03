@@ -54,6 +54,15 @@ dependencies:
   crypto: ^3.0.6
   uuid: ^4.5.1
   disk_space_plus: ^0.2.5
+  photo_manager: ^3.12.0
+
+dependency_overrides:
+  # Patched to prefer a virtual multi-camera device for the back lens on iOS
+  # so zoom can reach the ultra-wide (0.5x) lens. See
+  # third_party/camera_avfoundation/ios/.../CameraPlugin.m for the diff
+  # against upstream camera_avfoundation 0.9.17+3.
+  camera_avfoundation:
+    path: third_party/camera_avfoundation
 
 dev_dependencies:
   flutter_test:
@@ -67,6 +76,29 @@ dev_dependencies:
   flutter_lints: ^6.0.0
   hive_generator: ^2.0.1
   build_runner: ^2.4.13
+  flutter_launcher_icons: ^0.14.4
+  flutter_native_splash: ^2.4.7
+
+flutter_launcher_icons:
+  android: true
+  ios: true
+  image_path: assets/branding/nilelens_icon.png
+  remove_alpha_ios: true
+
+flutter_native_splash:
+  color: "#F2DAB8"
+  image: assets/branding/nilelens_icon.png
+  android_12:
+    # Android 12+'s system splash icon is mandatorily clipped to a circle
+    # covering ~2/3 of the image (see flutter_native_splash README, "Android
+    # 12+ Support") — our full-bleed square artwork doesn't fit that safe
+    # zone, so it was showing up cropped. Using a blank icon here means that
+    # brief OS-owned phase just shows the matching background color; the
+    # full, uncropped image (the top-level `image` key above) then appears
+    # immediately after via the classic launch_background, which isn't
+    # circle-masked.
+    color: "#F2DAB8"
+    image: assets/branding/nilelens_icon_android12_blank.png
 
 # For information on the generic Dart part of this file, see the
 # following page: https://dart.dev/tools/pub/pubspec
@@ -83,6 +115,8 @@ flutter:
   # assets:
   #   - images/a_dot_burr.jpeg
   #   - images/a_dot_ham.jpeg
+  assets:
+    - assets/branding/nilelens_icon.png
 
   # An image asset can refer to one or more resolution-specific "variants", see
   # https://flutter.dev/to/resolution-aware-images

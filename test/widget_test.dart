@@ -1,6 +1,6 @@
 // Smoke test for the app shell. The previous version of this file tested the
 // default Flutter counter demo, which main.dart no longer contains — it now
-// bootstraps DI and the WallBase app instead.
+// bootstraps DI and the NileLens app instead.
 //
 // This is a pure UI/navigation smoke test, so it registers the in-memory
 // fake repository directly rather than calling the app's production
@@ -37,7 +37,7 @@ void main() {
     );
     isLoggedInNotifier.value = true;
 
-    await tester.pumpWidget(const WallBaseApp());
+    await tester.pumpWidget(const NileLensApp());
     await tester.pumpAndSettle();
 
     expect(find.text('Sites'), findsOneWidget);

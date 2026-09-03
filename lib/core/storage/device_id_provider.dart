@@ -22,4 +22,12 @@ class DeviceIdProvider {
     await box.put(_key, generated);
     return generated;
   }
+
+  /// Whether this install has ever generated a device id, without creating
+  /// one. The `device` box lives in the same sandboxed Documents directory
+  /// as every other Hive box, so it comes back empty whenever iOS performs a
+  /// true reinstall (as opposed to an in-place update) — unlike the Keychain
+  /// entry backing the auth token, which survives a reinstall. Used by
+  /// AuthRepositoryImpl to detect a stale token surviving a wiped sandbox.
+  bool hasExistingDeviceId() => Hive.box(HiveBoxes.device).containsKey(_key);
 }
