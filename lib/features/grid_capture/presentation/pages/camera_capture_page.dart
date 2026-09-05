@@ -117,6 +117,32 @@ class _CameraBodyState extends State<_CameraBody> {
   double? _pendingZoom;
   bool _applyingZoom = false;
 
+  // The primary lens's own range, cached once at startup — used to decide
+  // which zoom presets to show regardless of which physical lens is
+  // currently active (switching to the ultra-wide lens temporarily reports
+  // its own native ~1x-3x range, which must not hide the 1x/2x presets).
+  double _primaryMinimumZoom = 1;
+  double _primaryMaximumZoom = 1;
+  List<CameraDescription> _backCameras = [];
+
+  // Below 1x is optical, not digital: it requires physically switching to an
+  // ultra-wide lens. Only set when the primary lens can't already reach
+  // below 1x itself (e.g. iOS's fused virtual multi-camera device — see
+  // third_party/camera_avfoundation — already covers that case without a
+  // switch) and the device exposes a second back-facing camera to switch to.
+  CameraDescription? _ultraWideCamera;
+  bool _onUltraWideLens = false;
+
+  double get _displayZoom => _onUltraWideLens ? _currentZoom * 0.5 : _currentZoom;
+
+  // True whenever 0.5x is actually reachable — either the primary lens
+  // already natively zooms below 1x (no switch needed, e.g. iOS's fused
+  // virtual multi-camera device), or there's a separate ultra-wide
+  // CameraDescription to switch to.
+  bool get _canReachUltraWide =>
+      _ultraWideCamera != null ||
+      _primaryMinimumZoom <= 0.5 + _ZoomPresets._matchTolerance;
+
   @override
   void initState() {
     super.initState();
@@ -133,12 +159,20 @@ class _CameraBodyState extends State<_CameraBody> {
         });
         return;
       }
-      final backCamera = cameras.firstWhere(
-        (camera) => camera.lensDirection == CameraLensDirection.back,
-        orElse: () => cameras.first,
-      );
+      final backCameras =
+          cameras
+              .where((camera) => camera.lensDirection == CameraLensDirection.back)
+              .toList()
+            ..sort(
+              (a, b) => (int.tryParse(a.name) ?? 0).compareTo(
+                int.tryParse(b.name) ?? 0,
+              ),
+            );
+      final primaryCamera = backCameras.isNotEmpty
+          ? backCameras.first
+          : cameras.first;
       final controller = CameraController(
-        backCamera,
+        primaryCamera,
         ResolutionPreset.high,
         enableAudio: false,
       );
@@ -151,14 +185,24 @@ class _CameraBodyState extends State<_CameraBody> {
         await controller.dispose();
         return;
       }
+      final ultraWideCamera =
+          minimumZoom > 1 - _ZoomPresets._matchTolerance &&
+              backCameras.length > 1
+          ? backCameras[1]
+          : null;
       setState(() {
         _controller = controller;
         _loadState = _CameraLoadState.ready;
+        _backCameras = backCameras;
+        _ultraWideCamera = ultraWideCamera;
         _minimumZoom = minimumZoom;
         _maximumZoom = maximumZoom;
+        _primaryMinimumZoom = minimumZoom;
+        _primaryMaximumZoom = maximumZoom;
         _currentZoom = initialZoom;
         _appliedZoom = initialZoom;
         _baseZoom = initialZoom;
+        _onUltraWideLens = false;
       });
     } catch (error) {
       if (!mounted) return;
@@ -167,6 +211,71 @@ class _CameraBodyState extends State<_CameraBody> {
         _errorMessage = error.toString();
       });
     }
+  }
+
+  /// Switches the live controller to a different physical back lens (e.g.
+  /// primary <-> ultra-wide). The previous controller keeps rendering until
+  /// the new one has initialized, so the viewfinder never has to fall back
+  /// to a loading state mid-switch.
+  Future<void> _switchLens(
+    CameraDescription description, {
+    required bool isUltraWide,
+  }) async {
+    final previousController = _controller;
+    try {
+      final newController = CameraController(
+        description,
+        ResolutionPreset.high,
+        enableAudio: false,
+      );
+      await newController.initialize();
+      final minimumZoom = await newController.getMinZoomLevel();
+      final maximumZoom = await newController.getMaxZoomLevel();
+      await newController.setZoomLevel(minimumZoom);
+      await newController.setExposureMode(
+        widget.state.exposureLocked ? ExposureMode.locked : ExposureMode.auto,
+      );
+      if (!mounted) {
+        await newController.dispose();
+        return;
+      }
+      setState(() {
+        _controller = newController;
+        _minimumZoom = minimumZoom;
+        _maximumZoom = maximumZoom;
+        _currentZoom = minimumZoom;
+        _appliedZoom = minimumZoom;
+        _baseZoom = minimumZoom;
+        _onUltraWideLens = isUltraWide;
+      });
+      await previousController?.dispose();
+    } on CameraException catch (error) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              'Could not switch camera lens: '
+              '${error.description ?? error.code}',
+            ),
+          ),
+        );
+      }
+    }
+  }
+
+  Future<void> _handlePresetSelect(double level) async {
+    if (_loadState != _CameraLoadState.ready) return;
+    final wantsUltraWide = level < 1;
+    if (wantsUltraWide && _ultraWideCamera != null) {
+      if (!_onUltraWideLens) {
+        await _switchLens(_ultraWideCamera!, isUltraWide: true);
+      }
+      return;
+    }
+    if (!wantsUltraWide && _onUltraWideLens) {
+      await _switchLens(_backCameras.first, isUltraWide: false);
+    }
+    _requestZoom(level);
   }
 
   Future<void> _handleShutter() async {
@@ -342,10 +451,11 @@ class _CameraBodyState extends State<_CameraBody> {
                 Positioned(
                   bottom: AppSpacing.md,
                   child: _ZoomPresets(
-                    currentZoom: _currentZoom,
-                    minimumZoom: _minimumZoom,
-                    maximumZoom: _maximumZoom,
-                    onSelect: _requestZoom,
+                    currentZoom: _displayZoom,
+                    minimumZoom: _primaryMinimumZoom,
+                    maximumZoom: _primaryMaximumZoom,
+                    hasUltraWideLens: _canReachUltraWide,
+                    onSelect: _handlePresetSelect,
                   ),
                 ),
             ],
@@ -470,21 +580,24 @@ class _DarkPill extends StatelessWidget {
 }
 
 /// Quick-select zoom pills (0.5x / 1x / 2x), like a stock phone camera app,
-/// on top of the continuous pinch-to-zoom gesture on the viewfinder. Presets
-/// outside the device's actual [minimumZoom, maximumZoom] range are hidden —
-/// e.g. 0.5x only appears on hardware whose camera stack can actually reach
-/// an ultra-wide lens.
+/// on top of the continuous pinch-to-zoom gesture on the viewfinder. 1x/2x
+/// are hidden when outside the primary lens's actual [minimumZoom,
+/// maximumZoom] range; 0.5x is shown whenever [hasUltraWideLens] is true,
+/// since selecting it switches to a second physical lens rather than
+/// digitally zooming out past 1x (which isn't optically possible).
 class _ZoomPresets extends StatelessWidget {
   const _ZoomPresets({
     required this.currentZoom,
     required this.minimumZoom,
     required this.maximumZoom,
+    required this.hasUltraWideLens,
     required this.onSelect,
   });
 
   final double currentZoom;
   final double minimumZoom;
   final double maximumZoom;
+  final bool hasUltraWideLens;
   final ValueChanged<double> onSelect;
 
   static const List<double> _presetLevels = [0.5, 1, 2];
@@ -492,13 +605,11 @@ class _ZoomPresets extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final availablePresets = _presetLevels
-        .where(
-          (level) =>
-              level >= minimumZoom - _matchTolerance &&
-              level <= maximumZoom + _matchTolerance,
-        )
-        .toList();
+    final availablePresets = _presetLevels.where((level) {
+      if (level < 1) return hasUltraWideLens;
+      return level >= minimumZoom - _matchTolerance &&
+          level <= maximumZoom + _matchTolerance;
+    }).toList();
 
     return Column(
       mainAxisSize: MainAxisSize.min,
