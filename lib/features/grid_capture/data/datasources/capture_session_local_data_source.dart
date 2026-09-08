@@ -15,5 +15,12 @@ class CaptureSessionLocalDataSource {
   Future<void> put(CaptureSessionRecord record) =>
       _box.put(record.wallId, record);
 
+  Future<void> delete(String wallId) => _box.delete(wallId);
+
   Stream<void> watch(String wallId) => _box.watch(key: wallId);
+
+  /// Box-wide change stream — used where a caller tracks many wall ids at
+  /// once (e.g. `UnassignedWallRepositoryImpl`'s list) rather than one fixed
+  /// [wallId] known up front.
+  Stream<void> watchAll() => _box.watch();
 }

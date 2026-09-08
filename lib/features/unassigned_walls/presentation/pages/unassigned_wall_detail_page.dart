@@ -15,11 +15,12 @@ import '../../domain/repositories/unassigned_wall_repository.dart';
 import '../cubit/unassigned_wall_detail_cubit.dart';
 import '../cubit/unassigned_wall_detail_state.dart';
 
-/// Detail/action screen for one off-map wall: capture flat photos, register
+/// Detail/action screen for one off-map wall: capture photos through the
+/// normal grid-init/grid-capture flow (keyed by its `local_id`), register
 /// its metadata (`POST /sync/unassigned`), and once a dashboard operator has
-/// resolved it to a real wall, hand the photos off to the normal
-/// grid-capture/sync-queue pipeline. Reached from `FloorWallsPage` when the
-/// tapped wall is `WallEntity.isLocal` — never from `WallDetailPage`.
+/// resolved it to a real wall, hand the captured session off to the normal
+/// sync-queue pipeline. Reached from `FloorWallsPage` when the tapped wall
+/// is `WallEntity.isLocal` — never from `WallDetailPage`.
 class UnassignedWallDetailPage extends StatelessWidget {
   const UnassignedWallDetailPage({
     super.key,
@@ -184,13 +185,8 @@ class _Content extends StatelessWidget {
                 ],
                 const SizedBox(height: AppSpacing.xl),
                 PrimaryActionButton(
-                  label: wall.photoCount > 0
-                      ? 'Add more photos'
-                      : 'Start capture',
-                  onTap: () => context.push(
-                    '/sites/$siteId/buildings/$buildingId/floors/$floorId'
-                    '/unassigned/${wall.localId}/camera',
-                  ),
+                  label: wall.hasGrid ? 'Add more photos' : 'Start capture',
+                  onTap: () => _onCapture(context),
                 ),
                 if (wall.syncStatus != UnassignedWallSyncStatus.resolved &&
                     wall.photoCount > 0) ...[
@@ -222,6 +218,12 @@ class _Content extends StatelessWidget {
         ),
       ],
     );
+  }
+
+  void _onCapture(BuildContext context) {
+    final base =
+        '/sites/$siteId/buildings/$buildingId/floors/$floorId/walls/${wall.localId}';
+    context.push(wall.hasGrid ? '$base/grid-capture' : '$base/grid-init');
   }
 
   Future<void> _onSync(BuildContext context) async {

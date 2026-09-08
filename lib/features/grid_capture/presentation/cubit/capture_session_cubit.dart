@@ -18,8 +18,8 @@ const List<GridPreset> kGridPresets = [
   (rows: 4, cols: 3, label: '4 × 3'),
 ];
 
-const _maxGridDimension = 10;
-const _maxGridCells = 100;
+const _maxGridDimension = 20;
+const _maxGridCells = 400;
 
 /// Backs the grid-init, grid-capture, camera-capture, and coverage-review
 /// screens — one linear capture session, so one cubit (rather than a cubit
@@ -59,6 +59,15 @@ class CaptureSessionCubit extends Cubit<CaptureSessionState> {
               emit(CaptureSessionError(error.toString())),
         );
   }
+
+  /// Re-reads the wall directly from the repository and applies it to this
+  /// cubit's state. [watchWall]'s stream doesn't re-emit for local-session
+  /// changes (see [reshapeGrid]/[capturePhoto]), so a screen whose grid was
+  /// reshaped by a *different* [CaptureSessionCubit] instance further up the
+  /// navigation stack (each screen creates its own, per this cubit's class
+  /// doc) needs to pull the fresh grid explicitly when it becomes visible
+  /// again rather than waiting for an event that will never arrive.
+  void refresh() => _onWallChanged(_repository.getWall(_floorId, _wallId));
 
   void _onWallChanged(WallEntity? wall) {
     if (wall == null) {

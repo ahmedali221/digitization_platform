@@ -8,6 +8,7 @@ import '../../domain/entities/wall.dart';
 import '../../domain/repositories/site_repository.dart';
 import '../../storage/directory_manager.dart';
 import '../../theme/wall_status.dart';
+import '../../utils/relative_time.dart';
 import '../datasources/site_local_data_source.dart';
 import '../datasources/site_remote_data_source.dart';
 import '../mappers/site_mapper.dart';
@@ -213,15 +214,19 @@ class SiteRepositoryImpl implements SiteRepository {
     final localWalls = _local.localWallsForFloor(floor.id);
     if (localWalls.isEmpty) return floor;
 
+    final wallStatus = _local.allWallStatus();
     final added = localWalls.entries.map((entry) {
       final data = entry.value;
+      final localRecord = wallStatus[entry.key];
       return WallEntity(
         id: entry.key,
         floorId: floor.id,
         name: data['title'] as String,
         notes: data['notes'] as String? ?? '',
-        status: WallStatus.notStarted,
-        lastCapture: '—',
+        status: localRecord != null
+            ? WallStatus.values.byName(localRecord.status)
+            : WallStatus.notStarted,
+        lastCapture: formatRelativeTime(localRecord?.updatedAt),
       );
     });
 

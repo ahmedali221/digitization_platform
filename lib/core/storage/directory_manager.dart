@@ -10,6 +10,7 @@ import 'package:path_provider/path_provider.dart';
 ///   app_documents/sessions/{session_id}/  in-progress/completed capture shots
 ///   app_documents/backup/{session_id}/    write-once raw-photo copies
 ///   app_documents/thumbs/                 status-index thumbnails
+///   app_documents/exports/{site_id}/      generated backup zips, pending share
 ///
 /// Also wraps `disk_space_plus` as the storage-watchdog primitive (Phase 7):
 /// callers decide the threshold, this just reports free space honestly.
@@ -42,6 +43,9 @@ class DirectoryManager {
       _ensure(['backup', sessionId]);
 
   Future<Directory> thumbsDir() => _ensure(['thumbs']);
+
+  Future<Directory> exportsDir(String siteId) =>
+      _ensure(['exports', siteId]);
 
   /// Deletes a session's backup copies. Callers must only invoke this after
   /// the corresponding sync session has been confirmed by the server

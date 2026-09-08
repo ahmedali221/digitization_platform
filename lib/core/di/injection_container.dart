@@ -11,6 +11,7 @@ import '../../features/grid_capture/domain/repositories/grid_capture_repository.
 import '../../features/grid_capture/domain/services/capture_recovery_service.dart';
 import '../../features/map_navigation/data/repositories/map_geometry_repository_impl.dart';
 import '../../features/map_navigation/domain/repositories/map_geometry_repository.dart';
+import '../../features/site_backup/domain/services/site_backup_service.dart';
 import '../../features/site_sync/domain/services/site_download_service.dart';
 import '../../features/sync_queue/data/datasources/sync_queue_local_data_source.dart';
 import '../../features/sync_queue/data/datasources/sync_remote_data_source.dart';
@@ -169,9 +170,7 @@ void setupDependencies() {
   );
 
   GetIt.instance.registerLazySingleton<UnassignedCaptureLocalDataSource>(
-    () => UnassignedCaptureLocalDataSource(
-      directoryManager: GetIt.instance<DirectoryManager>(),
-    ),
+    () => UnassignedCaptureLocalDataSource(),
   );
   GetIt.instance.registerLazySingleton<UnassignedWallRemoteDataSource>(
     () => UnassignedWallRemoteDataSource(GetIt.instance<Dio>()),
@@ -185,6 +184,15 @@ void setupDependencies() {
       deviceIdProvider: GetIt.instance<DeviceIdProvider>(),
       sessionLocal: GetIt.instance<CaptureSessionLocalDataSource>(),
       syncEnqueuer: GetIt.instance<SyncEnqueuer>(),
+    ),
+  );
+
+  GetIt.instance.registerLazySingleton<SiteBackupService>(
+    () => SiteBackupService(
+      siteRepository: GetIt.instance<SiteRepository>(),
+      gridCaptureRepository: GetIt.instance<GridCaptureRepository>(),
+      unassignedWallRepository: GetIt.instance<UnassignedWallRepository>(),
+      directoryManager: GetIt.instance<DirectoryManager>(),
     ),
   );
 }

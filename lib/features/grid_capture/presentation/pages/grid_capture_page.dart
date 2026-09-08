@@ -15,6 +15,7 @@ import '../cubit/capture_session_state.dart';
 import '../widgets/capture_screen_header.dart';
 import '../widgets/grid_capture_metrics.dart';
 import '../widgets/grid_cell_tile.dart';
+import '../widgets/scrollable_cell_grid.dart';
 
 class GridCapturePage extends StatelessWidget {
   const GridCapturePage({
@@ -104,43 +105,26 @@ class _GridCaptureContent extends StatelessWidget {
           onBack: () => context.safePop(),
           trailing: CircleIconButton(
             icon: Icons.aspect_ratio,
-            onTap: () => context.push(
-              '/sites/$siteId/buildings/$buildingId/floors/$floorId/walls/$wallId/grid-reshape',
-            ),
+            onTap: () => _openReshape(context),
           ),
         ),
         Expanded(
-          child: Padding(
-            padding: const EdgeInsets.symmetric(
-              horizontal: GridCaptureMetrics.horizontalPadding,
-            ),
-            child: GridView.builder(
-              padding: const EdgeInsets.only(bottom: AppSpacing.lg),
-              gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-                crossAxisCount: grid.cols,
-                mainAxisSpacing: GridCaptureMetrics.gap,
-                crossAxisSpacing: GridCaptureMetrics.gap,
-                childAspectRatio: 1,
-              ),
-              itemCount: grid.cells.length,
-              itemBuilder: (context, index) {
-                final row = index ~/ grid.cols + 1;
-                final col = index % grid.cols + 1;
-                final shotPaths = grid.cells[index].shotPaths;
-                return GridCellTile(
-                  label: 'R${row}C$col',
-                  photoCount: grid.cells[index].photoCount,
-                  thumbnailPath: shotPaths.isEmpty ? null : shotPaths.first,
-                  isSelected: state.activeCellId == index,
-                  onTap: () {
-                    context.read<CaptureSessionCubit>().openCell(index);
-                    context.push(
-                      '/sites/$siteId/buildings/$buildingId/floors/$floorId/walls/$wallId/camera?cell=$index',
-                    );
-                  },
-                );
-              },
-            ),
+          child: ScrollableCellGrid(
+            cols: grid.cols,
+            cellCount: grid.cells.length,
+            bottomPadding: AppSpacing.lg,
+            itemBuilder: (context, index) {
+              final row = index ~/ grid.cols + 1;
+              final col = index % grid.cols + 1;
+              final shotPaths = grid.cells[index].shotPaths;
+              return GridCellTile(
+                label: 'R${row}C$col',
+                photoCount: grid.cells[index].photoCount,
+                thumbnailPath: shotPaths.isEmpty ? null : shotPaths.first,
+                isSelected: state.activeCellId == index,
+                onTap: () => _openCamera(context, index),
+              );
+            },
           ),
         ),
         Padding(
@@ -153,12 +137,39 @@ class _GridCaptureContent extends StatelessWidget {
           child: PrimaryActionButton(
             label: 'Review coverage',
             enabled: grid.filledCount > 0,
-            onTap: () => context.push(
-              '/sites/$siteId/buildings/$buildingId/floors/$floorId/walls/$wallId/coverage-review',
-            ),
+            onTap: () => _openCoverageReview(context),
           ),
         ),
       ],
     );
+  }
+
+  // Each pushed screen owns its own [CaptureSessionCubit] instance (see that
+  // class's doc), so its grid changes never reach this page's stream-backed
+  // instance — refresh explicitly once control returns here.
+
+  Future<void> _openReshape(BuildContext context) async {
+    final cubit = context.read<CaptureSessionCubit>();
+    await context.push(
+      '/sites/$siteId/buildings/$buildingId/floors/$floorId/walls/$wallId/grid-reshape',
+    );
+    cubit.refresh();
+  }
+
+  Future<void> _openCamera(BuildContext context, int index) async {
+    final cubit = context.read<CaptureSessionCubit>();
+    cubit.openCell(index);
+    await context.push(
+      '/sites/$siteId/buildings/$buildingId/floors/$floorId/walls/$wallId/camera?cell=$index',
+    );
+    cubit.refresh();
+  }
+
+  Future<void> _openCoverageReview(BuildContext context) async {
+    final cubit = context.read<CaptureSessionCubit>();
+    await context.push(
+      '/sites/$siteId/buildings/$buildingId/floors/$floorId/walls/$wallId/coverage-review',
+    );
+    cubit.refresh();
   }
 }

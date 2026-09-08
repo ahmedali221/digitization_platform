@@ -1,24 +1,16 @@
 import '../entities/unassigned_wall.dart';
 
 /// Contract for capturing and syncing walls found before a room/zone
-/// assignment was known (FLUTTER_MOBILE_PLAN.md Phase 5). Photos are kept
-/// as a flat, ungridded list on-device — grid capture against a `local_id`
-/// isn't supported server-side (Section 5/8 of the plan) — until
-/// [checkResolution] finds a real `wall_id`, at which point
-/// [promoteToRealWall] hands the flat shots off to the normal, working
-/// grid-capture/sync-queue pipeline.
+/// assignment was known (FLUTTER_MOBILE_PLAN.md Phase 5). Photos are captured
+/// through the normal grid-init/grid-capture pipeline against the `local_id`
+/// itself (`GridCaptureRepository`, same as any real wall) — the backend
+/// still only accepts a resolved `wall_id` (Section 5/8 of the plan), so
+/// nothing here ever enqueues a session until [checkResolution] finds one
+/// and [promoteToRealWall] re-keys the already-captured session onto it.
 abstract class UnassignedWallRepository {
   Stream<List<UnassignedWall>> watchUnassignedWalls();
 
   UnassignedWall? findByLocalId(String localId);
-
-  /// Appends one already-saved shot (see the capture cubit, which saves the
-  /// file first — mirroring `GridCaptureRepository.capturePhoto`'s
-  /// filePath/sha256 convention) to [localId]'s flat photo list.
-  Future<void> appendShot(String localId, String filePath, String sha256);
-
-  /// Removes one previously-appended shot from [localId]'s flat photo list.
-  Future<void> removeShot(String localId, String filePath);
 
   /// `POST /sync/unassigned` — registers/refreshes this capture's metadata
   /// server-side. Idempotent on `(local_id, site_id)`. [siteId] overrides the
@@ -46,9 +38,9 @@ abstract class UnassignedWallRepository {
   /// `SyncQueueRunner.drainAll()` call.
   Future<void> checkAllResolutions();
 
-  /// Grid-ifies [localId]'s flat shots (1 row × N columns) into a real
-  /// `CaptureSessionRecord` against its resolved wall, then enqueues it
-  /// through the existing `SyncEnqueuer`/`SyncQueueRunner` pipeline.
-  /// No-op if [localId] hasn't been resolved yet.
+  /// Re-keys [localId]'s already-captured `CaptureSessionRecord` onto its
+  /// resolved wall id, then enqueues it through the existing
+  /// `SyncEnqueuer`/`SyncQueueRunner` pipeline. No-op if [localId] hasn't
+  /// been resolved yet or has no captured session.
   Future<void> promoteToRealWall(String localId);
 }

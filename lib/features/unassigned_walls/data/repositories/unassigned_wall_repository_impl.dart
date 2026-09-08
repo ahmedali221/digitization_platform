@@ -35,6 +35,7 @@ class UnassignedWallRepositoryImpl implements UnassignedWallRepository {
        _syncEnqueuer = syncEnqueuer {
     _localWallsSub = _siteLocal.watchLocalWalls().listen((_) => _emit());
     _captureSub = _captureLocal.watchAll().listen((_) => _emit());
+    _sessionSub = _sessionLocal.watchAll().listen((_) => _emit());
   }
 
   final SiteLocalDataSource _siteLocal;
@@ -48,6 +49,7 @@ class UnassignedWallRepositoryImpl implements UnassignedWallRepository {
   final _controller = StreamController<List<UnassignedWall>>.broadcast();
   late final StreamSubscription<void> _localWallsSub;
   late final StreamSubscription<void> _captureSub;
+  late final StreamSubscription<void> _sessionSub;
 
   @override
   Stream<List<UnassignedWall>> watchUnassignedWalls() async* {
@@ -59,24 +61,6 @@ class UnassignedWallRepositoryImpl implements UnassignedWallRepository {
   UnassignedWall? findByLocalId(String localId) {
     final stub = _siteLocal.allLocalWalls()[localId];
     return stub == null ? null : _toEntity(localId, stub);
-  }
-
-  @override
-  Future<void> appendShot(
-    String localId,
-    String filePath,
-    String sha256,
-  ) async {
-    await _captureLocal.recordShot(
-      localId: localId,
-      filePath: filePath,
-      sha256: sha256,
-    );
-  }
-
-  @override
-  Future<void> removeShot(String localId, String filePath) async {
-    await _captureLocal.removeShot(localId: localId, filePath: filePath);
   }
 
   @override
@@ -190,47 +174,36 @@ class UnassignedWallRepositoryImpl implements UnassignedWallRepository {
 
   @override
   Future<void> promoteToRealWall(String localId) async {
-    final capture = await _captureLocal.healPaths(localId);
+    final capture = _captureLocal.get(localId);
     final resolvedWallId = capture?.resolvedWallId;
-    if (capture == null || resolvedWallId == null || capture.shots.isEmpty) {
+    final session = _sessionLocal.get(localId);
+    if (capture == null || resolvedWallId == null || session == null) {
       return;
     }
-
-    final cells = [
-      for (var i = 0; i < capture.shots.length; i++)
-        CaptureCellRecord(
-          row: 0,
-          col: i,
-          photos: [
-            CapturePhotoRecord(
-              file: capture.shots[i],
-              sha256: capture.checksums[i],
-              shot: 1,
-              capturedAt: capture.createdAt,
-            ),
-          ],
-        ),
-    ];
 
     // This wall was just resolved on the dashboard, so it may not exist in
     // this device's locally cached site bundle yet — unlike
     // GridCaptureRepositoryImpl's finalize step, there's deliberately no
     // local WallStatus/SiteRepository update here; the enqueue below is what
     // actually gets these photos to the server, which is what matters.
+    // Photo file paths are left untouched — they're absolute paths already
+    // written to disk under `sessions/{localId}/...`; nothing re-derives
+    // them from wallId except at capture time, which has already happened.
     await _sessionLocal.put(
       CaptureSessionRecord(
         sessionId: resolvedWallId,
         wallId: resolvedWallId,
-        floorId: capture.floorId,
-        siteId: capture.siteId,
-        gridRows: 1,
-        gridCols: capture.shots.length,
-        cells: cells,
-        state: 'completed',
-        createdAt: capture.createdAt,
-        completedAt: DateTime.now(),
+        floorId: session.floorId,
+        siteId: capture.siteId.isNotEmpty ? capture.siteId : session.siteId,
+        gridRows: session.gridRows,
+        gridCols: session.gridCols,
+        cells: session.cells,
+        state: session.state,
+        createdAt: session.createdAt,
+        completedAt: session.completedAt,
       ),
     );
+    await _sessionLocal.delete(localId);
 
     final stub = _siteLocal.allLocalWalls()[localId];
     final displayName = (stub?['title'] as String?) ?? localId;
@@ -252,6 +225,7 @@ class UnassignedWallRepositoryImpl implements UnassignedWallRepository {
     final floor = _siteRepository.findFloor(floorId);
     final siteId = _siteLocal.getFloor(floorId)?.siteId ?? '';
     final capture = _captureLocal.get(localId);
+    final session = _sessionLocal.get(localId);
     final createdAtRaw = stub['createdAt'] as String?;
 
     return UnassignedWall(
@@ -261,12 +235,15 @@ class UnassignedWallRepositoryImpl implements UnassignedWallRepository {
       siteId: siteId,
       buildingId: floor?.buildingId ?? '',
       floorId: floorId,
-      photoCount: capture?.shots.length ?? 0,
+      photoCount: session == null
+          ? 0
+          : session.cells.fold(0, (sum, cell) => sum + cell.photos.length),
       notes: stub['notes'] as String? ?? '',
       capturedAt: createdAtRaw != null
           ? (DateTime.tryParse(createdAtRaw) ?? DateTime.now())
           : DateTime.now(),
       syncStatus: _syncStatusOf(capture),
+      hasGrid: session != null,
       resolvedWallId: capture?.resolvedWallId,
     );
   }
@@ -284,6 +261,7 @@ class UnassignedWallRepositoryImpl implements UnassignedWallRepository {
   Future<void> dispose() async {
     await _localWallsSub.cancel();
     await _captureSub.cancel();
+    await _sessionSub.cancel();
     await _controller.close();
   }
 }

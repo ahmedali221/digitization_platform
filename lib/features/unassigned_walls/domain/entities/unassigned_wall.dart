@@ -28,6 +28,7 @@ class UnassignedWall extends Equatable {
     required this.notes,
     required this.capturedAt,
     required this.syncStatus,
+    this.hasGrid = false,
     this.resolvedWallId,
   });
 
@@ -48,6 +49,11 @@ class UnassignedWall extends Equatable {
   final DateTime capturedAt;
   final UnassignedWallSyncStatus syncStatus;
 
+  /// True once a local `CaptureSessionRecord` exists for this wall (grid
+  /// picked via grid-init) — mirrors `WallEntity.hasGrid`'s "Start capture" /
+  /// "Add more photos" label swap and grid-init-vs-grid-capture routing.
+  final bool hasGrid;
+
   /// Set once [syncStatus] is [UnassignedWallSyncStatus.resolved].
   final String? resolvedWallId;
 
@@ -67,6 +73,7 @@ class UnassignedWall extends Equatable {
     notes,
     capturedAt,
     syncStatus,
+    hasGrid,
     resolvedWallId,
   ];
 }

@@ -103,8 +103,8 @@ class _GridReshapeForm extends StatefulWidget {
 
 class _GridReshapeFormState extends State<_GridReshapeForm> {
   static const _minDimension = 1;
-  static const _maxDimension = 10;
-  static const _maxCells = 100;
+  static const _maxDimension = 20;
+  static const _maxCells = 400;
 
   late int _rows = widget.grid.rows;
   late int _cols = widget.grid.cols;

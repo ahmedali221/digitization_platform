@@ -7,6 +7,7 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:get_it/get_it.dart';
 import 'package:go_router/go_router.dart';
 
+import '../../../../core/hardware/capture_button_channel.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../../../core/theme/app_spacing.dart';
 import '../../../../core/theme/wall_status.dart';
@@ -147,6 +148,7 @@ class _CameraBodyState extends State<_CameraBody> {
   void initState() {
     super.initState();
     _initializeCamera();
+    CaptureButtonChannel.listen(_handleShutter);
   }
 
   Future<void> _initializeCamera() async {
@@ -379,6 +381,7 @@ class _CameraBodyState extends State<_CameraBody> {
 
   @override
   void dispose() {
+    CaptureButtonChannel.stop();
     _controller?.dispose();
     super.dispose();
   }

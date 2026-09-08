@@ -19,6 +19,7 @@ import '../cubit/buildings_cubit.dart';
 import '../cubit/buildings_state.dart';
 import '../widgets/overview_metrics.dart';
 import '../widgets/shape_canvas.dart';
+import '../widgets/site_backup_button.dart';
 
 /// First hierarchy level below a site. Selecting a building opens its floors;
 /// it never opens walls directly.
@@ -79,6 +80,11 @@ class BuildingsListPage extends StatelessWidget {
                             ],
                           ),
                         ),
+                        SiteBackupButton(
+                          siteId: siteId,
+                          siteName: site.name,
+                        ),
+                        const SizedBox(width: AppSpacing.xs),
                         CircleIconButton(
                           icon: Icons.refresh,
                           onTap: () => _refreshFromDashboard(context),

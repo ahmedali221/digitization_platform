@@ -19,6 +19,7 @@ import '../cubit/capture_session_state.dart';
 import '../widgets/capture_screen_header.dart';
 import '../widgets/grid_capture_metrics.dart';
 import '../widgets/grid_cell_tile.dart';
+import '../widgets/scrollable_cell_grid.dart';
 import 'grid_preview_screen.dart';
 
 class CoverageReviewPage extends StatelessWidget {
@@ -105,31 +106,21 @@ class _CoverageReviewContent extends StatelessWidget {
           onBack: () => context.safePop(),
         ),
         Expanded(
-          child: Padding(
-            padding: const EdgeInsets.symmetric(
-              horizontal: GridCaptureMetrics.horizontalPadding,
-            ),
-            child: GridView.builder(
-              padding: const EdgeInsets.only(bottom: AppSpacing.lg),
-              gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-                crossAxisCount: grid.cols,
-                mainAxisSpacing: GridCaptureMetrics.gap,
-                crossAxisSpacing: GridCaptureMetrics.gap,
-                childAspectRatio: 1,
-              ),
-              itemCount: grid.cells.length,
-              itemBuilder: (context, index) {
-                final row = index ~/ grid.cols + 1;
-                final col = index % grid.cols + 1;
-                final shotPaths = grid.cells[index].shotPaths;
-                return GridCellTile(
-                  label: 'R${row}C$col',
-                  photoCount: grid.cells[index].photoCount,
-                  thumbnailPath: shotPaths.isEmpty ? null : shotPaths.first,
-                  mode: GridCellMode.review,
-                );
-              },
-            ),
+          child: ScrollableCellGrid(
+            cols: grid.cols,
+            cellCount: grid.cells.length,
+            bottomPadding: AppSpacing.lg,
+            itemBuilder: (context, index) {
+              final row = index ~/ grid.cols + 1;
+              final col = index % grid.cols + 1;
+              final shotPaths = grid.cells[index].shotPaths;
+              return GridCellTile(
+                label: 'R${row}C$col',
+                photoCount: grid.cells[index].photoCount,
+                thumbnailPath: shotPaths.isEmpty ? null : shotPaths.first,
+                mode: GridCellMode.review,
+              );
+            },
           ),
         ),
         if (incomplete)

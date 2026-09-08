@@ -4,11 +4,13 @@ import '../../../../core/data/models/hive_type_ids.dart';
 
 part 'unassigned_capture_record.g.dart';
 
-/// A local-id wall's flat (no-grid) capture session — box
-/// `unassigned_captures`, keyed by [localId]. Separate from the plain
+/// A local-id wall's sync/resolution bookkeeping — box `unassigned_captures`,
+/// keyed by [localId]. Separate from the plain
 /// `{floorId, title, notes, createdAt}` map `SiteLocalDataSource` already
-/// keeps in the `unassigned` box for the wall-stub itself; this record only
-/// tracks the photos and their sync lifecycle (FLUTTER_MOBILE_PLAN.md §5).
+/// keeps in the `unassigned` box for the wall-stub itself; this record
+/// tracks the metadata-sync/resolution lifecycle (FLUTTER_MOBILE_PLAN.md §5)
+/// — actual photos live in `CaptureSessionRecord`, keyed by the same
+/// `local_id`, via the normal grid-init/grid-capture pipeline.
 @HiveType(typeId: HiveTypeIds.unassignedCaptureRecord)
 class UnassignedCaptureRecord extends HiveObject {
   UnassignedCaptureRecord({
@@ -32,14 +34,14 @@ class UnassignedCaptureRecord extends HiveObject {
   @HiveField(2)
   final String floorId;
 
-  /// Flat, capture-order shot file paths — no row/col, per Phase 5's "treat
-  /// photos as a flat list (no grid)" guidance for unresolved local walls.
+  /// Legacy flat, capture-order shot file paths — no longer written by the
+  /// normal capture flow (photos go through `CaptureSessionRecord` via the
+  /// grid-init/grid-capture pipeline instead). Only still populated by
+  /// [UnassignedWallRepository.migrateOrphanedGridCapture]'s recovery path.
   @HiveField(3)
   List<String> shots;
 
-  /// Parallel to [shots] — sha256 of each file, needed once
-  /// [UnassignedWallRepository.promoteToRealWall] grid-ifies these into a
-  /// real `CaptureSessionRecord`.
+  /// Parallel to [shots] — sha256 of each file.
   @HiveField(4)
   List<String> checksums;
 
