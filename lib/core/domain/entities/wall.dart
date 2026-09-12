@@ -5,6 +5,12 @@ import '../../theme/wall_status.dart';
 /// One grid cell's captured shots, in capture order (`S1`, `S2`, ...).
 /// `shotPaths` holds real local file paths — both the real camera repository
 /// and any later on-device compositing need actual files, not just a count.
+///
+/// Capture Quality Indicator results are deliberately NOT part of this
+/// entity: `WallEntity`/`GridState`/`GridCell` are shared across features
+/// (map_navigation, site_backup, ...) via `SiteRepository`, while quality
+/// scoring is grid_capture's own concern. See `CaptureSessionCubit` /
+/// `GridCaptureRepository.getCellQuality`.
 class GridCell extends Equatable {
   const GridCell({this.shotPaths = const []});
 

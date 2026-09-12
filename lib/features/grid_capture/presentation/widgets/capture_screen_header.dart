@@ -58,7 +58,10 @@ class CaptureScreenHeader extends StatelessWidget {
                   ).textTheme.titleLarge?.copyWith(fontSize: 20),
                 ),
               ),
-              ?trailing,
+              // Not `?trailing`: hive_generator's pinned analyzer (<7.0.0)
+              // can't parse the null-aware collection element and aborts
+              // `build_runner build` on this file.
+              if (trailing != null) trailing!,
             ],
           ),
         ),

@@ -1,6 +1,7 @@
 import 'package:equatable/equatable.dart';
 
 import '../../../../core/domain/entities/wall.dart';
+import '../../domain/entities/capture_quality.dart';
 
 /// States for the shared grid-init / grid-capture / camera / coverage-review
 /// session cubit — the four feedback states required by DESIGN_SYSTEM.md §8
@@ -39,6 +40,8 @@ class CaptureSessionLoaded extends CaptureSessionState {
     this.customCols = 2,
     this.activeCellId,
     this.exposureLocked = false,
+    this.cellQuality = const {},
+    this.analyzingCellIds = const {},
   });
 
   final WallEntity wall;
@@ -51,6 +54,15 @@ class CaptureSessionLoaded extends CaptureSessionState {
   final int? activeCellId;
   final bool exposureLocked;
 
+  /// Capture Quality Indicator result per cell index — see
+  /// [GridCaptureRepository.getCellQuality]. Deliberately not part of
+  /// [WallEntity]/[GridState] (see [GridCell]'s doc comment).
+  final Map<int, CellQualityResult> cellQuality;
+
+  /// Cell indices [CaptureSessionCubit] currently has an analysis isolate
+  /// running for — drives the badge's "scoring…" state.
+  final Set<int> analyzingCellIds;
+
   GridState? get grid => wall.grid;
   int get customCellCount => customRows * customCols;
 
@@ -60,6 +72,8 @@ class CaptureSessionLoaded extends CaptureSessionState {
     int? customCols,
     int? activeCellId,
     bool? exposureLocked,
+    Map<int, CellQualityResult>? cellQuality,
+    Set<int>? analyzingCellIds,
   }) {
     return CaptureSessionLoaded(
       wall: wall ?? this.wall,
@@ -67,6 +81,8 @@ class CaptureSessionLoaded extends CaptureSessionState {
       customCols: customCols ?? this.customCols,
       activeCellId: activeCellId ?? this.activeCellId,
       exposureLocked: exposureLocked ?? this.exposureLocked,
+      cellQuality: cellQuality ?? this.cellQuality,
+      analyzingCellIds: analyzingCellIds ?? this.analyzingCellIds,
     );
   }
 
@@ -77,5 +93,7 @@ class CaptureSessionLoaded extends CaptureSessionState {
     customCols,
     activeCellId,
     exposureLocked,
+    cellQuality,
+    analyzingCellIds,
   ];
 }

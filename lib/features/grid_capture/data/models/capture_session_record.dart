@@ -1,6 +1,7 @@
 import 'package:hive/hive.dart';
 
 import '../../../../core/data/models/hive_type_ids.dart';
+import 'cell_quality_record.dart';
 
 part 'capture_session_record.g.dart';
 
@@ -32,6 +33,8 @@ class CaptureCellRecord {
     required this.row,
     required this.col,
     required this.photos,
+    this.quality,
+    this.qualityOverridden = false,
   });
 
   @HiveField(0)
@@ -43,8 +46,44 @@ class CaptureCellRecord {
   @HiveField(2)
   final List<CapturePhotoRecord> photos;
 
-  CaptureCellRecord withPhotoAdded(CapturePhotoRecord photo) =>
-      CaptureCellRecord(row: row, col: col, photos: [...photos, photo]);
+  /// Capture Quality Indicator result for this cell's current shot — null
+  /// until Tier 1 has run at least once. Local-only (see CaptureAnalyzer);
+  /// never part of the sync/upload manifest.
+  @HiveField(3)
+  final CellQualityRecord? quality;
+
+  /// The operator explicitly chose to keep this shot despite a red/orange
+  /// score. Deliberately a separate field from [quality] (not a field on
+  /// [CellQualityRecord] itself): [quality] gets wholesale-replaced by
+  /// every fresh analysis (including a neighbour-triggered rescore that
+  /// doesn't touch this cell's own photo), while this flag must survive
+  /// that and only ever change via [withPhotoAdded]/[withQualityOverride].
+  @HiveField(4)
+  final bool qualityOverridden;
+
+  CaptureCellRecord withPhotoAdded(CapturePhotoRecord photo) => CaptureCellRecord(
+    row: row,
+    col: col,
+    photos: [...photos, photo],
+    quality: quality,
+    qualityOverridden: false,
+  );
+
+  CaptureCellRecord withQuality(CellQualityRecord result) => CaptureCellRecord(
+    row: row,
+    col: col,
+    photos: photos,
+    quality: result,
+    qualityOverridden: qualityOverridden,
+  );
+
+  CaptureCellRecord withQualityOverride(bool overridden) => CaptureCellRecord(
+    row: row,
+    col: col,
+    photos: photos,
+    quality: quality,
+    qualityOverridden: overridden,
+  );
 }
 
 /// One wall's local capture progress on this device — the durable backing

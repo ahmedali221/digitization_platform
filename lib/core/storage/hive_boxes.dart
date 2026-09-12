@@ -1,6 +1,7 @@
 import 'package:hive_flutter/hive_flutter.dart';
 
 import '../../features/grid_capture/data/models/capture_session_record.dart';
+import '../../features/grid_capture/data/models/cell_quality_record.dart';
 import '../../features/sync_queue/data/models/sync_queue_item_record.dart';
 import '../../features/unassigned_walls/data/models/unassigned_capture_record.dart';
 import '../data/models/floor_package_record.dart';
@@ -39,6 +40,8 @@ Future<void> registerAdaptersAndOpenBoxes() async {
   Hive.registerAdapter(CaptureSessionRecordAdapter());
   Hive.registerAdapter(SyncQueueItemRecordAdapter());
   Hive.registerAdapter(UnassignedCaptureRecordAdapter());
+  Hive.registerAdapter(CellQualityRecordAdapter());
+  Hive.registerAdapter(NeighbourQualityRecordAdapter());
 
   await Future.wait([
     Hive.openBox<SitePackageRecord>(HiveBoxes.sites),

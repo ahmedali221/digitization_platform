@@ -63,19 +63,25 @@ class CaptureCellRecordAdapter extends TypeAdapter<CaptureCellRecord> {
       row: fields[0] as int,
       col: fields[1] as int,
       photos: (fields[2] as List).cast<CapturePhotoRecord>(),
+      quality: fields[3] as CellQualityRecord?,
+      qualityOverridden: fields[4] as bool,
     );
   }
 
   @override
   void write(BinaryWriter writer, CaptureCellRecord obj) {
     writer
-      ..writeByte(3)
+      ..writeByte(5)
       ..writeByte(0)
       ..write(obj.row)
       ..writeByte(1)
       ..write(obj.col)
       ..writeByte(2)
-      ..write(obj.photos);
+      ..write(obj.photos)
+      ..writeByte(3)
+      ..write(obj.quality)
+      ..writeByte(4)
+      ..write(obj.qualityOverridden);
   }
 
   @override

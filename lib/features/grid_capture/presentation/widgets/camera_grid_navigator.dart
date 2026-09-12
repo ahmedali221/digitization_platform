@@ -6,7 +6,9 @@ import '../../../../core/domain/entities/wall.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../../../core/theme/app_spacing.dart';
 import '../../../../core/theme/wall_status.dart';
+import '../../domain/entities/capture_quality.dart';
 import 'grid_capture_metrics.dart';
+import 'quality_badge.dart';
 
 /// Keeps every grid cell within reach while the camera stays open.
 ///
@@ -18,12 +20,17 @@ class CameraGridNavigator extends StatefulWidget {
     required this.grid,
     required this.activeCellIndex,
     required this.onCellSelected,
+    this.cellQuality = const {},
     this.enabled = true,
   });
 
   final GridState grid;
   final int activeCellIndex;
   final ValueChanged<int> onCellSelected;
+
+  /// Capture Quality Indicator result per cell index — see
+  /// [GridCaptureRepository.getCellQuality].
+  final Map<int, CellQualityResult> cellQuality;
   final bool enabled;
 
   @override
@@ -123,6 +130,7 @@ class _CameraGridNavigatorState extends State<CameraGridNavigator> {
                       photoCount: widget.grid.cells[index].photoCount,
                       thumbnailPath: shotPaths.isEmpty ? null : shotPaths.first,
                       isActive: index == widget.activeCellIndex,
+                      qualityTier: widget.cellQuality[index]?.tier,
                       onTap: widget.enabled
                           ? () => widget.onCellSelected(index)
                           : null,
@@ -145,6 +153,7 @@ class _CameraGridCell extends StatelessWidget {
     required this.photoCount,
     this.thumbnailPath,
     required this.isActive,
+    this.qualityTier,
     required this.onTap,
   });
 
@@ -152,6 +161,7 @@ class _CameraGridCell extends StatelessWidget {
   final int photoCount;
   final String? thumbnailPath;
   final bool isActive;
+  final QualityTier? qualityTier;
   final VoidCallback? onTap;
 
   @override
@@ -240,6 +250,8 @@ class _CameraGridCell extends StatelessWidget {
                     ),
                   ],
                 ),
+                if (qualityTier != null)
+                  Positioned(top: 4, right: 4, child: QualityDot(tier: qualityTier!, size: 9)),
               ],
             ),
           ),

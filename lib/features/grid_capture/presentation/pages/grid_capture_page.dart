@@ -122,6 +122,7 @@ class _GridCaptureContent extends StatelessWidget {
                 photoCount: grid.cells[index].photoCount,
                 thumbnailPath: shotPaths.isEmpty ? null : shotPaths.first,
                 isSelected: state.activeCellId == index,
+                qualityTier: state.cellQuality[index]?.tier,
                 onTap: () => _openCamera(context, index),
               );
             },

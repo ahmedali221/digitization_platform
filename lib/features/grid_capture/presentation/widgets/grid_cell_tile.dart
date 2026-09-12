@@ -5,7 +5,9 @@ import 'package:flutter/material.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../../../core/theme/app_spacing.dart';
 import '../../../../core/theme/wall_status.dart';
+import '../../domain/entities/capture_quality.dart';
 import 'grid_capture_metrics.dart';
+import 'quality_badge.dart';
 
 enum GridCellMode { capture, review }
 
@@ -24,6 +26,7 @@ class GridCellTile extends StatelessWidget {
     this.thumbnailPath,
     this.isSelected = false,
     this.mode = GridCellMode.capture,
+    this.qualityTier,
     this.onTap,
   });
 
@@ -32,6 +35,10 @@ class GridCellTile extends StatelessWidget {
   final String? thumbnailPath;
   final bool isSelected;
   final GridCellMode mode;
+
+  /// Capture Quality Indicator heat color for this cell's current shot
+  /// (spec §5) — null while unscored or empty; never shown without a photo.
+  final QualityTier? qualityTier;
   final VoidCallback? onTap;
 
   bool get _hasPhotos => photoCount > 0;
@@ -89,6 +96,12 @@ class GridCellTile extends StatelessWidget {
               ),
             ),
           Center(child: overlay),
+          if (qualityTier != null)
+            Positioned(
+              top: 6,
+              right: 6,
+              child: QualityDot(tier: qualityTier!),
+            ),
         ],
       ),
     );

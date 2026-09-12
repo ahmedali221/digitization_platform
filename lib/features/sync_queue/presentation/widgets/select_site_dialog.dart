@@ -4,10 +4,6 @@ import '../../../../core/domain/entities/site.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../../../core/theme/app_spacing.dart';
 
-/// Site picker for [SyncQueueCubit.resolveOrphanedWall] — the wall's
-/// original floor→site mapping may be stale (that's often *why* it's stuck),
-/// so the operator picks it explicitly instead of it being re-derived.
-/// Returns the chosen site's id, or null if cancelled.
 Future<String?> showSelectSiteDialog({
   required BuildContext context,
   required List<SiteEntity> sites,

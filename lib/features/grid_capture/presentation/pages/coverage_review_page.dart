@@ -12,7 +12,9 @@ import '../../../../core/utils/navigation_extensions.dart';
 import '../../../../core/widgets/feedback_states.dart';
 import '../../../../core/widgets/primary_action_button.dart';
 import '../../data/datasources/grid_capture_local_data_source.dart';
+import '../../domain/entities/capture_quality.dart';
 import '../../domain/repositories/grid_capture_repository.dart';
+import '../../domain/services/capture_quality_config.dart';
 import '../../domain/services/grid_preview_composer.dart';
 import '../cubit/capture_session_cubit.dart';
 import '../cubit/capture_session_state.dart';
@@ -119,6 +121,7 @@ class _CoverageReviewContent extends StatelessWidget {
                 photoCount: grid.cells[index].photoCount,
                 thumbnailPath: shotPaths.isEmpty ? null : shotPaths.first,
                 mode: GridCellMode.review,
+                qualityTier: state.cellQuality[index]?.tier,
               );
             },
           ),
@@ -180,12 +183,30 @@ class _CoverageReviewContent extends StatelessWidget {
   }
 
   Future<void> _previewCoverage(BuildContext context, GridState grid) async {
+    const config = CaptureQualityConfig();
     final request = GridPreviewRequest(
       rows: grid.rows,
       cols: grid.cols,
       cellShotPaths: grid.cells
           .map((cell) => cell.shotPaths.isEmpty ? null : cell.shotPaths.first)
           .toList(),
+      cellTiers: {
+        for (final entry in state.cellQuality.entries) entry.key: entry.value.tier,
+      },
+      edgeTiers: [
+        for (final entry in state.cellQuality.entries)
+          for (final neighbour in entry.value.neighbours)
+            EdgeTierEntry(
+              cellIndex: entry.key,
+              direction: neighbour.direction,
+              tier: qualityTierForScore(
+                neighbour.neighbourScore,
+                redMaxScore: config.redMaxScore,
+                orangeMaxScore: config.orangeMaxScore,
+                yellowMaxScore: config.yellowMaxScore,
+              ),
+            ),
+      ],
     );
 
     showDialog<void>(

@@ -1,5 +1,30 @@
 name: digitization_platform
 description: "A new Flutter project."
+
+# opencv_dart/dartcv4 excludes calib3d and features2d from its native build
+# by default (only imgproc+imgcodecs ship) - CaptureAnalyzer needs SIFT and
+# BFMatcher (features2d) plus findHomography/estimateAffine2D (calib3d), so
+# both must be declared here or their native symbols never get compiled in
+# at all (surfaces at runtime as "Couldn't resolve native function", not a
+# build error).
+hooks:
+  user_defines:
+    dartcv4:
+      include_modules:
+        - imgproc
+        - imgcodecs
+        - features2d
+        - calib3d
+      # NDK 29.0.14206865 (the highest installed, auto-picked by default)
+      # fails CMake's own C-compiler sanity check on this machine - clang/
+      # lld can't find crtbegin_dynamic.o/-lc/-lm/-latomic in its own
+      # sysroot. NDK 27.0.12077973 gets past that (OpenCV itself compiles
+      # cleanly) but then fails the FINAL link with hundreds of undefined
+      # libc++ symbols (__cxa_throw, recursive_mutex, operator new[], ...) -
+      # a known NDK r27 libc++-linking regression seen in other native-build
+      # ecosystems (e.g. React Native). 26 is the last version before it.
+      android:
+        ndk_version: "26.3.11579264"
 # The following line prevents the package from being accidentally published to
 # pub.dev using `flutter pub publish`. This is preferred for private packages.
 publish_to: 'none' # Remove this line if you wish to publish to pub.dev
@@ -16,7 +41,7 @@ publish_to: 'none' # Remove this line if you wish to publish to pub.dev
 # https://developer.apple.com/library/archive/documentation/General/Reference/InfoPlistKeyReference/Articles/CoreFoundationKeys.html
 # In Windows, build-name is used as the major, minor, and patch parts
 # of the product and file versions while build-number is used as the build suffix.
-version: 1.0.0+6
+version: 1.0.0+7
 
 environment:
   sdk: ^3.10.4
@@ -47,6 +72,12 @@ dependencies:
   image: ^4.8.0
   path: ^1.9.1
 
+  # Capture Quality Indicator (see Stitch/capture-quality-feature-spec.pdf):
+  # real SIFT/RANSAC on-device, backed by the same OpenCV core stitch.py
+  # calls from Python, so Tier 1-3 scores stay numerically consistent with
+  # the backend's own audit.
+  opencv_dart: ^2.2.2
+
   # Local-first data layer + dashboard sync (see FLUTTER_MOBILE_PLAN.md)
   connectivity_plus: ^7.0.0
   workmanager: ^0.9.0+3
@@ -68,6 +99,8 @@ dependency_overrides:
 
 dev_dependencies:
   flutter_test:
+    sdk: flutter
+  integration_test:
     sdk: flutter
 
   # The "flutter_lints" package below contains a set of recommended lints to

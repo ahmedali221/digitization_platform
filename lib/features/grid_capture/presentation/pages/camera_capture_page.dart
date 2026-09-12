@@ -19,6 +19,7 @@ import '../cubit/capture_session_cubit.dart';
 import '../cubit/capture_session_state.dart';
 import '../widgets/camera_grid_navigator.dart';
 import '../widgets/grid_capture_metrics.dart';
+import '../widgets/quality_badge.dart';
 
 class CameraCapturePage extends StatelessWidget {
   const CameraCapturePage({
@@ -416,7 +417,20 @@ class _CameraBodyState extends State<_CameraBody> {
               Positioned(
                 top: AppSpacing.lg,
                 left: AppSpacing.lg,
-                child: _DarkPill(label: cellLabel),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    _DarkPill(label: cellLabel),
+                    const SizedBox(height: AppSpacing.xs),
+                    QualityBadge(
+                      result: widget.state.cellQuality[activeCellId],
+                      analyzing: widget.state.analyzingCellIds.contains(activeCellId),
+                      onToggleOverride: () => context
+                          .read<CaptureSessionCubit>()
+                          .toggleQualityOverride(activeCellId),
+                    ),
+                  ],
+                ),
               ),
               Positioned(
                 top: AppSpacing.lg,
@@ -467,6 +481,7 @@ class _CameraBodyState extends State<_CameraBody> {
         CameraGridNavigator(
           grid: grid,
           activeCellIndex: activeCellId,
+          cellQuality: widget.state.cellQuality,
           enabled: !_capturing,
           onCellSelected: context.read<CaptureSessionCubit>().openCell,
         ),

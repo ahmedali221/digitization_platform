@@ -1,4 +1,5 @@
 import '../../../../core/domain/entities/wall.dart';
+import '../entities/capture_quality.dart';
 
 /// Storage-watchdog verdict (FLUTTER_MOBILE_PLAN.md Phase 7) — [low] warns
 /// but still allows starting; [critical] blocks starting a new session
@@ -80,4 +81,33 @@ abstract class GridCaptureRepository {
   void savePartial(String floorId, String wallId);
 
   Stream<WallEntity?> watchWall(String floorId, String wallId);
+
+  /// Every cell's most recent Capture Quality Indicator result, keyed by
+  /// cell index — empty until Tier 1 has run for at least one cell. Kept
+  /// separate from [WallEntity]/[GridState] (see [GridCell]'s doc comment):
+  /// quality is grid_capture's own concern, not part of the entity other
+  /// features read via [SiteRepository].
+  Map<int, CellQualityResult> getCellQuality(String floorId, String wallId);
+
+  /// Persists one cell's quality result against its current session record.
+  /// A no-op if that cell's session doesn't exist yet (it always will by
+  /// the time [CaptureAnalyzer] can run, since that needs a saved photo
+  /// first).
+  void recordCellQuality(
+    String floorId,
+    String wallId,
+    int cellIndex,
+    CellQualityResult result,
+  );
+
+  /// Records the operator's explicit "keep this shot anyway" decision for a
+  /// red/orange cell (or clears it). Never touches the stored score/tier —
+  /// see [CellQualityResult.overridden]'s doc comment for why the two stay
+  /// independent. A no-op if the cell has no session yet.
+  void setCellQualityOverride(
+    String floorId,
+    String wallId,
+    int cellIndex,
+    bool overridden,
+  );
 }

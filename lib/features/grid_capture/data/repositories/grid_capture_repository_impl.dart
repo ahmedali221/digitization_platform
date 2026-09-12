@@ -9,9 +9,11 @@ import '../../../../core/storage/directory_manager.dart';
 import '../../../../core/storage/gallery_backup_service.dart';
 import '../../../../core/theme/wall_status.dart';
 import '../../../sync_queue/domain/repositories/sync_enqueuer.dart';
+import '../../domain/entities/capture_quality.dart';
 import '../../domain/repositories/grid_capture_repository.dart';
 import '../datasources/capture_session_local_data_source.dart';
 import '../datasources/grid_capture_local_data_source.dart';
+import '../mappers/cell_quality_mapper.dart';
 import '../models/capture_session_record.dart';
 
 /// Real, Hive+file-backed [GridCaptureRepository]. Wall status still lives
@@ -360,6 +362,62 @@ class GridCaptureRepositoryImpl implements GridCaptureRepository {
       siteId: session.siteId,
       displayName: wallName,
     );
+  }
+
+  @override
+  Map<int, CellQualityResult> getCellQuality(String floorId, String wallId) {
+    final session = _sessionLocal.get(wallId);
+    if (session == null) return {};
+
+    final byIndex = <int, CellQualityResult>{};
+    for (final cell in session.cells) {
+      final quality = cell.quality;
+      if (quality == null) continue;
+      final index = cell.row * session.gridCols + cell.col;
+      byIndex[index] = CellQualityMapper.toResult(
+        index,
+        quality,
+        overridden: cell.qualityOverridden,
+      );
+    }
+    return byIndex;
+  }
+
+  @override
+  void recordCellQuality(
+    String floorId,
+    String wallId,
+    int cellIndex,
+    CellQualityResult result,
+  ) {
+    final session = _sessionLocal.get(wallId);
+    if (session == null) return;
+
+    final row = cellIndex ~/ session.gridCols;
+    final col = cellIndex % session.gridCols;
+    final record = CellQualityMapper.toRecord(result);
+    session.cells = session.cells
+        .map((c) => c.row == row && c.col == col ? c.withQuality(record) : c)
+        .toList();
+    _sessionLocal.put(session);
+  }
+
+  @override
+  void setCellQualityOverride(
+    String floorId,
+    String wallId,
+    int cellIndex,
+    bool overridden,
+  ) {
+    final session = _sessionLocal.get(wallId);
+    if (session == null) return;
+
+    final row = cellIndex ~/ session.gridCols;
+    final col = cellIndex % session.gridCols;
+    session.cells = session.cells
+        .map((c) => c.row == row && c.col == col ? c.withQualityOverride(overridden) : c)
+        .toList();
+    _sessionLocal.put(session);
   }
 
   String? _siteIdForFloor(String floorId) {

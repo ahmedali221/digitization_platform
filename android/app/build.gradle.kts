@@ -8,6 +8,9 @@ plugins {
 android {
     namespace = "com.example.digitization_platform"
     compileSdk = flutter.compileSdkVersion
+    // NOT where dartcv4's own NDK version is pinned - that's a separate
+    // native-assets build (see pubspec.yaml's hooks.user_defines.dartcv4.
+    // android.ndk_version), unaffected by this Gradle-level setting.
     ndkVersion = flutter.ndkVersion
 
     compileOptions {

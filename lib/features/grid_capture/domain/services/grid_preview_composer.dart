@@ -3,6 +3,24 @@ import 'dart:typed_data';
 
 import 'package:image/image.dart' as img;
 
+import '../entities/capture_quality.dart';
+
+/// One scored shared edge, for the colored border line drawn along it
+/// (spec §5: "a thin coloured line along each shared edge scored by its
+/// own neighbour_score — so a user can immediately see which side of a
+/// cell is the weak one").
+class EdgeTierEntry {
+  const EdgeTierEntry({
+    required this.cellIndex,
+    required this.direction,
+    required this.tier,
+  });
+
+  final int cellIndex;
+  final NeighbourDirection direction;
+  final QualityTier tier;
+}
+
 /// Request payload for [composeGridPreview]. Must be plain data — it
 /// crosses an isolate boundary via `compute()`, so it can't carry the
 /// [GridState]/[GridCell] domain objects themselves.
@@ -11,6 +29,8 @@ class GridPreviewRequest {
     required this.rows,
     required this.cols,
     required this.cellShotPaths,
+    this.cellTiers = const {},
+    this.edgeTiers = const [],
   });
 
   final int rows;
@@ -19,6 +39,13 @@ class GridPreviewRequest {
   /// One path per cell, row-major (matches `GridState.cells`); null for a
   /// cell with no photo yet.
   final List<String?> cellShotPaths;
+
+  /// Tier 1-3 heat color per cell index (spec §5's Tier 4 overlay) — absent
+  /// entries are unscored and get no tint.
+  final Map<int, QualityTier> cellTiers;
+
+  /// One entry per scored shared edge.
+  final List<EdgeTierEntry> edgeTiers;
 }
 
 const _cellSize = 360;
@@ -26,6 +53,9 @@ const _cellSize = 360;
 // shown on the capture screen — trimming this fraction removes the
 // duplicated content instead of aligning it by pixel content.
 const _overlapFraction = 0.25;
+
+const _cellTintAlpha = 90; // out of 255 — visible but keeps the photo legible
+const _edgeLineThickness = 5.0;
 
 /// Composes an approximate, position-based grid preview — NOT a real
 /// panorama. Each cell's first shot is placed at its known (row, col) slot
@@ -66,8 +96,74 @@ Uint8List composeGridPreview(GridPreviewRequest request) {
     }
   }
 
+  _paintQualityOverlay(canvas, request);
+
   return img.encodeJpg(canvas, quality: 85);
 }
+
+/// Tier 4's heat overlay (spec §5): a translucent tint over every scored
+/// cell's footprint, then a colored line along every scored shared edge —
+/// drawn once over the fully-assembled canvas so lines land exactly on the
+/// seams between tiles regardless of trimming.
+void _paintQualityOverlay(img.Image canvas, GridPreviewRequest request) {
+  for (final entry in request.cellTiers.entries) {
+    final row = entry.key ~/ request.cols;
+    final col = entry.key % request.cols;
+    final color = _tintColor(entry.value);
+    img.fillRect(
+      canvas,
+      x1: col * _cellSize,
+      y1: row * _cellSize,
+      x2: (col + 1) * _cellSize - 1,
+      y2: (row + 1) * _cellSize - 1,
+      color: color,
+    );
+  }
+
+  for (final edge in request.edgeTiers) {
+    final row = edge.cellIndex ~/ request.cols;
+    final col = edge.cellIndex % request.cols;
+    final color = _lineColor(edge.tier);
+    final x0 = col * _cellSize;
+    final y0 = row * _cellSize;
+    final x1 = (col + 1) * _cellSize - 1;
+    final y1 = (row + 1) * _cellSize - 1;
+    switch (edge.direction) {
+      case NeighbourDirection.left:
+        img.drawLine(canvas, x1: x0, y1: y0, x2: x0, y2: y1, color: color, thickness: _edgeLineThickness);
+      case NeighbourDirection.right:
+        img.drawLine(canvas, x1: x1, y1: y0, x2: x1, y2: y1, color: color, thickness: _edgeLineThickness);
+      case NeighbourDirection.top:
+        img.drawLine(canvas, x1: x0, y1: y0, x2: x1, y2: y0, color: color, thickness: _edgeLineThickness);
+      case NeighbourDirection.bottom:
+        img.drawLine(canvas, x1: x0, y1: y1, x2: x1, y2: y1, color: color, thickness: _edgeLineThickness);
+    }
+  }
+}
+
+img.ColorRgba8 _tintColor(QualityTier tier) {
+  final (r, g, b) = _rgbFor(tier);
+  return img.ColorRgba8(r, g, b, _cellTintAlpha);
+}
+
+img.ColorRgba8 _lineColor(QualityTier tier) {
+  final (r, g, b) = _rgbFor(tier);
+  return img.ColorRgba8(r, g, b, 255);
+}
+
+/// Spec §5's exact hex values, written out again here rather than pulled
+/// from `QualityTierMeta` (grid_capture's presentation layer): that file
+/// carries a `dart:ui` `Color`, and this compositor must stay callable
+/// without the Flutter engine (see `analyzeCellQuality`'s doc comment for
+/// why CaptureAnalyzer types are kept Flutter-free — this file inherits the
+/// same constraint since it consumes their output). Keep in sync with
+/// `quality_tier_meta.dart` if the palette ever changes.
+(int, int, int) _rgbFor(QualityTier tier) => switch (tier) {
+  QualityTier.red => (0xE5, 0x39, 0x35),
+  QualityTier.orange => (0xFB, 0x8C, 0x00),
+  QualityTier.yellow => (0xFD, 0xD8, 0x35),
+  QualityTier.green => (0x43, 0xA0, 0x47),
+};
 
 img.Image? _loadTile(String? path) {
   if (path == null) return null;
