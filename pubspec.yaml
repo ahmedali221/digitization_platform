@@ -23,6 +23,12 @@ hooks:
       # libc++ symbols (__cxa_throw, recursive_mutex, operator new[], ...) -
       # a known NDK r27 libc++-linking regression seen in other native-build
       # ecosystems (e.g. React Native). 26 is the last version before it.
+      #
+      # Flutter only looks for this exact NDK side-by-side install, it never
+      # installs it - so a machine without it fails with "Failed to find NDK
+      # version" during compileFlutterBuild*. android/app/build.gradle.kts
+      # has a Gradle task (ensureDartcv4Ndk) that installs it automatically
+      # if missing; keep the version literal there in sync with this one.
       android:
         ndk_version: "26.3.11579264"
 # The following line prevents the package from being accidentally published to
