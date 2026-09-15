@@ -61,6 +61,11 @@ class SitesCubit extends Cubit<SitesState> {
   Future<void> deleteCachedSite(String siteId) =>
       _repository.deleteCachedSite(siteId);
 
+  Future<void> archiveSite(String siteId) => _repository.archiveSite(siteId);
+
+  Future<void> unarchiveSite(String siteId) =>
+      _repository.unarchiveSite(siteId);
+
   @override
   Future<void> close() {
     _sitesSubscription?.cancel();

@@ -39,7 +39,6 @@ class CaptureSessionLoaded extends CaptureSessionState {
     this.customRows = 2,
     this.customCols = 2,
     this.activeCellId,
-    this.exposureLocked = false,
     this.cellQuality = const {},
     this.analyzingCellIds = const {},
   });
@@ -52,7 +51,6 @@ class CaptureSessionLoaded extends CaptureSessionState {
 
   /// The cell being photographed on the grid-capture/camera screens.
   final int? activeCellId;
-  final bool exposureLocked;
 
   /// Capture Quality Indicator result per cell index — see
   /// [GridCaptureRepository.getCellQuality]. Deliberately not part of
@@ -71,7 +69,6 @@ class CaptureSessionLoaded extends CaptureSessionState {
     int? customRows,
     int? customCols,
     int? activeCellId,
-    bool? exposureLocked,
     Map<int, CellQualityResult>? cellQuality,
     Set<int>? analyzingCellIds,
   }) {
@@ -80,7 +77,6 @@ class CaptureSessionLoaded extends CaptureSessionState {
       customRows: customRows ?? this.customRows,
       customCols: customCols ?? this.customCols,
       activeCellId: activeCellId ?? this.activeCellId,
-      exposureLocked: exposureLocked ?? this.exposureLocked,
       cellQuality: cellQuality ?? this.cellQuality,
       analyzingCellIds: analyzingCellIds ?? this.analyzingCellIds,
     );
@@ -92,7 +88,6 @@ class CaptureSessionLoaded extends CaptureSessionState {
     customRows,
     customCols,
     activeCellId,
-    exposureLocked,
     cellQuality,
     analyzingCellIds,
   ];

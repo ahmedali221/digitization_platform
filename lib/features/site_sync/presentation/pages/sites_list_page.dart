@@ -3,6 +3,7 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:get_it/get_it.dart';
 import 'package:go_router/go_router.dart';
 
+import '../../../../core/domain/entities/site.dart';
 import '../../../../core/domain/repositories/site_repository.dart';
 import '../../../../core/network/connectivity_observer.dart';
 import '../../../../core/theme/app_colors.dart';
@@ -34,8 +35,15 @@ class SitesListPage extends StatelessWidget {
   }
 }
 
-class _SitesListBody extends StatelessWidget {
+class _SitesListBody extends StatefulWidget {
   const _SitesListBody();
+
+  @override
+  State<_SitesListBody> createState() => _SitesListBodyState();
+}
+
+class _SitesListBodyState extends State<_SitesListBody> {
+  bool _showArchived = false;
 
   @override
   Widget build(BuildContext context) {
@@ -46,6 +54,16 @@ class _SitesListBody extends StatelessWidget {
           slivers: [
             SliverToBoxAdapter(child: _Header(isOffline: isOffline)),
             if (isOffline) const SliverToBoxAdapter(child: OfflineBanner()),
+            if (state is SitesLoaded)
+              SliverToBoxAdapter(
+                child: _ArchiveTabBar(
+                  showArchived: _showArchived,
+                  activeCount: state.activeSites.length,
+                  archivedCount: state.archivedSites.length,
+                  onChanged: (showArchived) =>
+                      setState(() => _showArchived = showArchived),
+                ),
+              ),
             ..._contentSlivers(context, state),
           ],
         );
@@ -69,25 +87,30 @@ class _SitesListBody extends StatelessWidget {
             ),
           ),
         ];
-      case SitesLoaded(:final sites):
+      case SitesLoaded():
+        final sites = _showArchived ? state.archivedSites : state.activeSites;
         if (sites.isEmpty) {
-          return const [
+          return [
             SliverFillRemaining(
               hasScrollBody: false,
               child: EmptyState(
-                icon: Icons.location_on_outlined,
-                message:
-                    'No sites yet — prepare a site from the web dashboard to get started',
+                icon: _showArchived
+                    ? Icons.archive_outlined
+                    : Icons.location_on_outlined,
+                message: _showArchived
+                    ? 'No archived sites'
+                    : 'No sites yet — prepare a site from the web dashboard to get started',
               ),
             ),
           ];
         }
         return [
-          SliverToBoxAdapter(child: _ReadyCountLabel(state: state)),
+          if (!_showArchived)
+            SliverToBoxAdapter(child: _ReadyCountLabel(sites: sites)),
           SliverPadding(
-            padding: const EdgeInsets.fromLTRB(
+            padding: EdgeInsets.fromLTRB(
               AppSpacing.lg,
-              AppSpacing.md,
+              _showArchived ? AppSpacing.md : AppSpacing.xs,
               AppSpacing.lg,
               AppSpacing.xl,
             ),
@@ -102,6 +125,9 @@ class _SitesListBody extends StatelessWidget {
                       : () {},
                   onDownload: () =>
                       _confirmAndDownload(context, site.id, site.name),
+                  onArchiveToggle: () => site.isArchived
+                      ? context.read<SitesCubit>().unarchiveSite(site.id)
+                      : context.read<SitesCubit>().archiveSite(site.id),
                 );
               }, childCount: sites.length * 2 - 1),
             ),
@@ -198,12 +224,13 @@ Future<void> _confirmLogout(BuildContext context) async {
 }
 
 class _ReadyCountLabel extends StatelessWidget {
-  const _ReadyCountLabel({required this.state});
+  const _ReadyCountLabel({required this.sites});
 
-  final SitesLoaded state;
+  final List<SiteEntity> sites;
 
   @override
   Widget build(BuildContext context) {
+    final readyCount = sites.where((site) => site.isReady).length;
     return Padding(
       padding: const EdgeInsets.fromLTRB(
         AppSpacing.lg,
@@ -212,10 +239,106 @@ class _ReadyCountLabel extends StatelessWidget {
         AppSpacing.xs,
       ),
       child: Text(
-        '${state.readyCount} of ${state.totalCount} sites ready for field',
+        '$readyCount of ${sites.length} sites ready for field',
         style: Theme.of(
           context,
         ).textTheme.bodyMedium?.copyWith(color: AppColors.onSurfaceMuted),
+      ),
+    );
+  }
+}
+
+/// Two-segment "Sites" / "Archived" toggle. No `TabBar` pattern exists
+/// elsewhere in this app (every list here is a flat page), so this follows
+/// the same hand-rolled `Material`+`InkWell` pill style as `SiteCard`'s
+/// badges rather than pulling in Flutter's default tab chrome.
+class _ArchiveTabBar extends StatelessWidget {
+  const _ArchiveTabBar({
+    required this.showArchived,
+    required this.activeCount,
+    required this.archivedCount,
+    required this.onChanged,
+  });
+
+  final bool showArchived;
+  final int activeCount;
+  final int archivedCount;
+  final ValueChanged<bool> onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(
+        AppSpacing.lg,
+        0,
+        AppSpacing.lg,
+        AppSpacing.sm,
+      ),
+      child: Container(
+        padding: const EdgeInsets.all(4),
+        decoration: BoxDecoration(
+          color: AppColors.surfaceNeutral,
+          borderRadius: BorderRadius.circular(AppRadius.chip),
+        ),
+        child: Row(
+          children: [
+            Expanded(
+              child: _TabButton(
+                label: 'Sites',
+                count: activeCount,
+                selected: !showArchived,
+                onTap: () => onChanged(false),
+              ),
+            ),
+            Expanded(
+              child: _TabButton(
+                label: 'Archived',
+                count: archivedCount,
+                selected: showArchived,
+                onTap: () => onChanged(true),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _TabButton extends StatelessWidget {
+  const _TabButton({
+    required this.label,
+    required this.count,
+    required this.selected,
+    required this.onTap,
+  });
+
+  final String label;
+  final int count;
+  final bool selected;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: selected ? Colors.white : Colors.transparent,
+      borderRadius: BorderRadius.circular(AppRadius.chip - 2),
+      elevation: selected ? 1 : 0,
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(AppRadius.chip - 2),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(vertical: AppSpacing.sm),
+          child: Center(
+            child: Text(
+              '$label ($count)',
+              style: Theme.of(context).textTheme.labelLarge?.copyWith(
+                color: selected ? AppColors.seed : AppColors.onSurfaceMuted,
+                fontWeight: selected ? FontWeight.w600 : FontWeight.w400,
+              ),
+            ),
+          ),
+        ),
       ),
     );
   }

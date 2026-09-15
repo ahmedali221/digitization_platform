@@ -21,7 +21,7 @@ import '../cubit/capture_session_state.dart';
 import '../widgets/capture_screen_header.dart';
 import '../widgets/grid_capture_metrics.dart';
 import '../widgets/grid_cell_tile.dart';
-import '../widgets/scrollable_cell_grid.dart';
+import '../widgets/linked_coverage_grid.dart';
 import 'grid_preview_screen.dart';
 
 class CoverageReviewPage extends StatelessWidget {
@@ -108,20 +108,23 @@ class _CoverageReviewContent extends StatelessWidget {
           onBack: () => context.safePop(),
         ),
         Expanded(
-          child: ScrollableCellGrid(
+          child: LinkedCoverageGrid(
+            rows: grid.rows,
             cols: grid.cols,
-            cellCount: grid.cells.length,
             bottomPadding: AppSpacing.lg,
+            linkMetrics: (a, b) => _linkMetrics(grid, a, b),
             itemBuilder: (context, index) {
               final row = index ~/ grid.cols + 1;
               final col = index % grid.cols + 1;
               final shotPaths = grid.cells[index].shotPaths;
+              final quality = state.cellQuality[index];
               return GridCellTile(
                 label: 'R${row}C$col',
                 photoCount: grid.cells[index].photoCount,
                 thumbnailPath: shotPaths.isEmpty ? null : shotPaths.first,
                 mode: GridCellMode.review,
-                qualityTier: state.cellQuality[index]?.tier,
+                qualityTier: quality?.tier,
+                qualityScore: quality?.cellScore.round(),
               );
             },
           ),
@@ -158,7 +161,10 @@ class _CoverageReviewContent extends StatelessWidget {
                 enabled: grid.isComplete,
                 onTap: () {
                   context.read<CaptureSessionCubit>().saveFull();
-                  context.go(
+                  // popToPath (not go()) so the floor's wall list is
+                  // revealed rather than rebuilt — see camera_capture_page's
+                  // _handleSave for why.
+                  context.popToPath(
                     '/sites/$siteId/buildings/$buildingId/floors/$floorId',
                   );
                 },
@@ -170,7 +176,7 @@ class _CoverageReviewContent extends StatelessWidget {
                 textColor: AppColors.onWarningContainer,
                 onTap: () {
                   context.read<CaptureSessionCubit>().savePartial();
-                  context.go(
+                  context.popToPath(
                     '/sites/$siteId/buildings/$buildingId/floors/$floorId',
                   );
                 },
@@ -181,6 +187,47 @@ class _CoverageReviewContent extends StatelessWidget {
       ],
     );
   }
+
+  /// The scored link between grid-adjacent cells [a] and [b], checked from
+  /// whichever side actually has it — a rescore only walks one cell's own
+  /// neighbour list at a time (see `CaptureSessionCubit._analyzeCellQuality`),
+  /// so the pair can briefly be recorded on only one side.
+  NeighbourMatchMetrics? _linkMetrics(GridState grid, int a, int b) {
+    final direction = b == a + 1
+        ? NeighbourDirection.right
+        : b == a - 1
+        ? NeighbourDirection.left
+        : b == a + grid.cols
+        ? NeighbourDirection.bottom
+        : NeighbourDirection.top;
+
+    final forward = _findNeighbourMetrics(a, direction, b);
+    if (forward != null) return forward;
+    return _findNeighbourMetrics(b, _opposite(direction), a);
+  }
+
+  NeighbourMatchMetrics? _findNeighbourMetrics(
+    int cellIndex,
+    NeighbourDirection direction,
+    int neighbourCellIndex,
+  ) {
+    final neighbours = state.cellQuality[cellIndex]?.neighbours;
+    if (neighbours == null) return null;
+    for (final neighbour in neighbours) {
+      if (neighbour.direction == direction &&
+          neighbour.neighbourCellIndex == neighbourCellIndex) {
+        return neighbour;
+      }
+    }
+    return null;
+  }
+
+  NeighbourDirection _opposite(NeighbourDirection direction) => switch (direction) {
+    NeighbourDirection.left => NeighbourDirection.right,
+    NeighbourDirection.right => NeighbourDirection.left,
+    NeighbourDirection.top => NeighbourDirection.bottom,
+    NeighbourDirection.bottom => NeighbourDirection.top,
+  };
 
   Future<void> _previewCoverage(BuildContext context, GridState grid) async {
     const config = CaptureQualityConfig();

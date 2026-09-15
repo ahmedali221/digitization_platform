@@ -17,6 +17,7 @@ class SiteEntity extends Equatable {
     this.downloadProgress = 0,
     this.lastSynced = '—',
     this.updateAvailable = false,
+    this.isArchived = false,
   });
 
   final String id;
@@ -35,6 +36,11 @@ class SiteEntity extends Equatable {
   final int downloadProgress;
   final String lastSynced;
   final bool updateAvailable;
+
+  /// Locally hidden from the default sites list without deleting the cached
+  /// bundle — an operator's "not doing this one right now" flag, distinct
+  /// from [SiteAvailability] which tracks download state.
+  final bool isArchived;
 
   bool get isReady => availability == SiteAvailability.ready;
   bool get isDownloading => availability == SiteAvailability.downloading;
@@ -59,6 +65,7 @@ class SiteEntity extends Equatable {
     int? downloadProgress,
     String? lastSynced,
     bool? updateAvailable,
+    bool? isArchived,
   }) {
     return SiteEntity(
       id: id,
@@ -70,6 +77,7 @@ class SiteEntity extends Equatable {
       downloadProgress: downloadProgress ?? this.downloadProgress,
       lastSynced: lastSynced ?? this.lastSynced,
       updateAvailable: updateAvailable ?? this.updateAvailable,
+      isArchived: isArchived ?? this.isArchived,
     );
   }
 
@@ -84,5 +92,6 @@ class SiteEntity extends Equatable {
     downloadProgress,
     lastSynced,
     updateAvailable,
+    isArchived,
   ];
 }

@@ -30,6 +30,7 @@ class UnassignedWall extends Equatable {
     required this.syncStatus,
     this.hasGrid = false,
     this.resolvedWallId,
+    this.roomLabel,
   });
 
   final String id;
@@ -57,6 +58,9 @@ class UnassignedWall extends Equatable {
   /// Set once [syncStatus] is [UnassignedWallSyncStatus.resolved].
   final String? resolvedWallId;
 
+  /// The room/level (e.g. "J") given on `AddWallPage`, if any.
+  final String? roomLabel;
+
   /// Shown as a small flag icon next to [localId] — no note has been added
   /// yet, which the dashboard operator will want before resolving this wall.
   bool get noteRequired => notes.trim().isEmpty;
@@ -75,5 +79,6 @@ class UnassignedWall extends Equatable {
     syncStatus,
     hasGrid,
     resolvedWallId,
+    roomLabel,
   ];
 }

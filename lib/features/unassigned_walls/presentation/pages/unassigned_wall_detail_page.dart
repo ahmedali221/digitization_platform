@@ -154,6 +154,15 @@ class _Content extends StatelessWidget {
                     fontWeight: FontWeight.w600,
                   ),
                 ),
+                if (wall.roomLabel != null && wall.roomLabel!.isNotEmpty) ...[
+                  const SizedBox(height: 4),
+                  Text(
+                    'Level ${wall.roomLabel}',
+                    style: textTheme.bodyMedium?.copyWith(
+                      color: AppColors.onSurfaceMuted,
+                    ),
+                  ),
+                ],
                 const SizedBox(height: AppSpacing.md),
                 _SyncStatusBadge(wall: wall),
                 const SizedBox(height: AppSpacing.lg),

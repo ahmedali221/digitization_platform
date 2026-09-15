@@ -46,6 +46,23 @@ flutter {
     source = "../.."
 }
 
+// Same CameraX release the `camera_android_camerax` plugin itself pins
+// (android/build.gradle there) — declared explicitly because the plugin
+// brings these in as `implementation`, which keeps them off :app's own
+// compile classpath even though they're merged into the APK at runtime.
+// MainActivity's lens-role detection needs to call these APIs directly.
+val cameraxVersion = "1.3.4"
+
+dependencies {
+    implementation("androidx.camera:camera-core:$cameraxVersion")
+    implementation("androidx.camera:camera-camera2:$cameraxVersion")
+    implementation("androidx.camera:camera-lifecycle:$cameraxVersion")
+    // ProcessCameraProvider.getInstance() returns a Guava ListenableFuture —
+    // CameraX depends on it as `implementation` too, so it's on the merged
+    // APK classpath already but not :app's own compile classpath.
+    implementation("com.google.guava:guava:33.0.0-android")
+}
+
 // dartcv4's native-assets build hook is pinned to a specific NDK side-by-side
 // install (see pubspec.yaml -> hooks.user_defines.dartcv4.android.ndk_version)
 // that's independent of the `ndkVersion` Gradle setting above. The Flutter

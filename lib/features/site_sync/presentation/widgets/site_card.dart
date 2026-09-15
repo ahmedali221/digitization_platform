@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../../../../core/domain/entities/site.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../../../core/theme/app_spacing.dart';
+import '../../../../core/widgets/circle_icon_button.dart';
 import '../../../../core/widgets/thin_progress_bar.dart';
 
 /// One row on the sites list. Content branches on [SiteEntity.availability]:
@@ -15,11 +16,13 @@ class SiteCard extends StatelessWidget {
     required this.site,
     required this.onOpen,
     required this.onDownload,
+    required this.onArchiveToggle,
   });
 
   final SiteEntity site;
   final VoidCallback onOpen;
   final VoidCallback onDownload;
+  final VoidCallback onArchiveToggle;
 
   @override
   Widget build(BuildContext context) {
@@ -38,7 +41,7 @@ class SiteCard extends StatelessWidget {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              _TitleRow(site: site),
+              _TitleRow(site: site, onArchiveToggle: onArchiveToggle),
               const SizedBox(height: AppSpacing.md),
               if (site.isNotDownloaded)
                 _NotDownloadedRow(onDownload: onDownload),
@@ -53,9 +56,10 @@ class SiteCard extends StatelessWidget {
 }
 
 class _TitleRow extends StatelessWidget {
-  const _TitleRow({required this.site});
+  const _TitleRow({required this.site, required this.onArchiveToggle});
 
   final SiteEntity site;
+  final VoidCallback onArchiveToggle;
 
   @override
   Widget build(BuildContext context) {
@@ -86,10 +90,25 @@ class _TitleRow extends StatelessWidget {
             ],
           ),
         ),
-        if (site.isReady) ...[
-          const SizedBox(width: AppSpacing.md),
-          _ReadyBadges(site: site),
-        ],
+        const SizedBox(width: AppSpacing.xs),
+        Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.end,
+          children: [
+            CircleIconButton(
+              icon: site.isArchived
+                  ? Icons.unarchive_outlined
+                  : Icons.archive_outlined,
+              onTap: onArchiveToggle,
+              visualDiameter: 32,
+              iconSize: 18,
+            ),
+            if (site.isReady) ...[
+              const SizedBox(height: AppSpacing.xs),
+              _ReadyBadges(site: site),
+            ],
+          ],
+        ),
       ],
     );
   }

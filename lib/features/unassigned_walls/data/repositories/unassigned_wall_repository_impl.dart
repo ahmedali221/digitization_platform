@@ -72,6 +72,8 @@ class UnassignedWallRepositoryImpl implements UnassignedWallRepository {
     final resolvedSiteId =
         siteId ?? _siteLocal.getFloor(floorId)?.siteId ?? '';
     final deviceId = await _deviceIdProvider.getOrCreateDeviceId();
+    final name = (stub['title'] as String?) ?? localId;
+    final roomLabel = stub['roomLabel'] as String?;
     final notes = stub['notes'] as String?;
     final capture = await _captureLocal.ensure(
       localId: localId,
@@ -83,6 +85,9 @@ class UnassignedWallRepositoryImpl implements UnassignedWallRepository {
       localId: localId,
       siteId: resolvedSiteId,
       deviceId: deviceId,
+      name: name,
+      floorId: floorId,
+      roomLabel: roomLabel,
       notes: notes,
       capturedAt: capture.createdAt,
     );
@@ -245,6 +250,7 @@ class UnassignedWallRepositoryImpl implements UnassignedWallRepository {
       syncStatus: _syncStatusOf(capture),
       hasGrid: session != null,
       resolvedWallId: capture?.resolvedWallId,
+      roomLabel: stub['roomLabel'] as String?,
     );
   }
 

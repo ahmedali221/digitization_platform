@@ -35,6 +35,14 @@ abstract class SiteRepository {
   /// check (against the sync queue) before calling this.
   Future<void> deleteCachedSite(String siteId);
 
+  /// Hides [siteId] from the default sites list without touching its cached
+  /// bundle or download state — reversible via [unarchiveSite]. Downloading
+  /// first is not required.
+  Future<void> archiveSite(String siteId);
+
+  /// Reverses [archiveSite], restoring [siteId] to the default sites list.
+  Future<void> unarchiveSite(String siteId);
+
   /// Applies [update] to the wall and pushes the mutated tree to
   /// [watchSites]'s listeners.
   void updateWall(
@@ -44,6 +52,14 @@ abstract class SiteRepository {
   );
 
   /// Creates a new wall on [floorId] with the given [title]/[notes] and
-  /// pushes the mutated tree to [watchSites]'s listeners.
-  void addWall(String floorId, {required String title, String notes = ''});
+  /// pushes the mutated tree to [watchSites]'s listeners. [roomLabel], when
+  /// given, assigns the wall to that room/level (e.g. "J") on the floor's
+  /// room filter — matching an existing room's label if one exists, or
+  /// forming a new one otherwise — instead of leaving it "Unassigned".
+  void addWall(
+    String floorId, {
+    required String title,
+    String notes = '',
+    String? roomLabel,
+  });
 }

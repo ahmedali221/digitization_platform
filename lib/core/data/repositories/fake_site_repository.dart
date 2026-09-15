@@ -91,6 +91,16 @@ class FakeSiteRepository implements SiteRepository {
   }
 
   @override
+  Future<void> archiveSite(String siteId) async {
+    _mutateSite(siteId, (s) => s.copyWith(isArchived: true));
+  }
+
+  @override
+  Future<void> unarchiveSite(String siteId) async {
+    _mutateSite(siteId, (s) => s.copyWith(isArchived: false));
+  }
+
+  @override
   Future<void> startDownload(String siteId) async {
     _mutateSite(
       siteId,
@@ -382,7 +392,12 @@ class FakeSiteRepository implements SiteRepository {
   }
 
   @override
-  void addWall(String floorId, {required String title, String notes = ''}) {
+  void addWall(
+    String floorId, {
+    required String title,
+    String notes = '',
+    String? roomLabel,
+  }) {
     _sites = _sites.map((site) {
       final buildings = site.buildings.map((building) {
         final floors = building.floors.map((floor) {
@@ -394,6 +409,7 @@ class FakeSiteRepository implements SiteRepository {
             notes: notes,
             status: WallStatus.notStarted,
             lastCapture: '—',
+            roomLabel: roomLabel,
           );
           return floor.copyWithWalls([...floor.walls, wall]);
         }).toList();

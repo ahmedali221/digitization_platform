@@ -5,7 +5,9 @@ import '../../../../core/errors/failure.dart';
 import '../../../../core/network/api_endpoints.dart';
 
 /// Calls the two Phase 5 sync-intake endpoints — `POST /sync/unassigned`
-/// (metadata registration, idempotent on `local_id`+`site_id`) and
+/// (metadata registration, idempotent on `local_id`+`site_id`, carries the
+/// wall's `name`/`floor_id`/`room_label` so the server-side stub isn't
+/// nameless and can be grouped under the right room) and
 /// `GET /sync/mappings` (resolved `local_id -> wall_id` lookup). Neither
 /// endpoint accepts photo binaries — see `PROJECT_AGENT_REFERENCE.md` and
 /// `FLUTTER_MOBILE_PLAN.md` §5/§8: photos stay device-local until a mapping
@@ -20,6 +22,9 @@ class UnassignedWallRemoteDataSource {
     required String localId,
     required String siteId,
     required String deviceId,
+    required String name,
+    required String floorId,
+    String? roomLabel,
     String? notes,
     DateTime? capturedAt,
   }) async {
@@ -30,6 +35,10 @@ class UnassignedWallRemoteDataSource {
           'local_id': localId,
           'site_id': siteId,
           'device_id': deviceId,
+          'name': name,
+          'floor_id': floorId,
+          if (roomLabel != null && roomLabel.isNotEmpty)
+            'room_label': roomLabel,
           if (notes != null && notes.isNotEmpty) 'notes': notes,
           if (capturedAt != null) 'captured_at': capturedAt.toIso8601String(),
         },

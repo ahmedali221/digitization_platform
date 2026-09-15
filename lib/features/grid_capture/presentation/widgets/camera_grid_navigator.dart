@@ -40,6 +40,7 @@ class CameraGridNavigator extends StatefulWidget {
 class _CameraGridNavigatorState extends State<CameraGridNavigator> {
   static const _cellWidth = 68.0;
   static const _cellGap = AppSpacing.sm;
+  static const _rowDividerWidth = 40.0;
 
   late final ScrollController _scrollController;
 
@@ -59,7 +60,19 @@ class _CameraGridNavigatorState extends State<CameraGridNavigator> {
     }
   }
 
-  double _offsetFor(int index) => index * (_cellWidth + _cellGap);
+  bool _isRowBoundary(int separatorIndex) =>
+      (separatorIndex + 1) % widget.grid.cols == 0;
+
+  // The strip is row-major, so a row divider (wider than the ordinary cell
+  // gap) sits at every separator that closes out a row — offsets have to
+  // account for that extra width or `_revealActiveCell` under/overshoots.
+  double _offsetFor(int index) {
+    final rowDividers = index ~/ widget.grid.cols;
+    final normalGaps = index - rowDividers;
+    return index * _cellWidth +
+        normalGaps * _cellGap +
+        rowDividers * _rowDividerWidth;
+  }
 
   void _revealActiveCell() {
     if (!mounted || !_scrollController.hasClients) return;
@@ -117,7 +130,9 @@ class _CameraGridNavigatorState extends State<CameraGridNavigator> {
                 scrollDirection: Axis.horizontal,
                 padding: const EdgeInsets.symmetric(horizontal: AppSpacing.lg),
                 itemCount: widget.grid.cells.length,
-                separatorBuilder: (_, _) => const SizedBox(width: _cellGap),
+                separatorBuilder: (_, index) => _isRowBoundary(index)
+                    ? _RowDivider(nextRow: (index + 1) ~/ widget.grid.cols + 1)
+                    : const SizedBox(width: _cellGap),
                 itemBuilder: (context, index) {
                   final row = index ~/ widget.grid.cols + 1;
                   final col = index % widget.grid.cols + 1;
@@ -141,6 +156,61 @@ class _CameraGridNavigatorState extends State<CameraGridNavigator> {
             ),
           ],
         ),
+      ),
+    );
+  }
+}
+
+/// Marks the boundary between one grid row and the next in the strip, since
+/// the cells otherwise scroll past as one undifferentiated row-major line.
+/// The badge names the row that starts right after it.
+class _RowDivider extends StatelessWidget {
+  const _RowDivider({required this.nextRow});
+
+  final int nextRow;
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      width: _CameraGridNavigatorState._rowDividerWidth,
+      height: 64,
+      child: Stack(
+        alignment: Alignment.center,
+        children: [
+          Container(
+            width: 2.5,
+            height: 56,
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(2),
+              gradient: LinearGradient(
+                begin: Alignment.topCenter,
+                end: Alignment.bottomCenter,
+                colors: [
+                  Colors.white.withValues(alpha: 0),
+                  Colors.white70,
+                  Colors.white70,
+                  Colors.white.withValues(alpha: 0),
+                ],
+                stops: const [0, 0.15, 0.85, 1],
+              ),
+            ),
+          ),
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
+            decoration: BoxDecoration(
+              color: AppColors.seed,
+              borderRadius: BorderRadius.circular(AppRadius.chip),
+              border: Border.all(color: Colors.white, width: 1),
+            ),
+            child: Text(
+              'R$nextRow',
+              style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                color: Colors.white,
+                fontWeight: FontWeight.w800,
+              ),
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -177,7 +247,7 @@ class _CameraGridCell extends StatelessWidget {
         ? capturedColor.withValues(alpha: 0.35)
         : GridCaptureMetrics.cameraThumbBackground;
     final borderColor = isActive
-        ? Colors.white
+        ? Colors.orange.shade300
         : hasPhotos
         ? capturedColor
         : Colors.white24;

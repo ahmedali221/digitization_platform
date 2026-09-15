@@ -61,6 +61,7 @@ class WallEntity extends Equatable {
     required this.lastCapture,
     this.notes = '',
     this.grid,
+    this.roomLabel,
   });
 
   final String id;
@@ -70,6 +71,12 @@ class WallEntity extends Equatable {
   final WallStatus status;
   final String lastCapture;
   final GridState? grid;
+
+  /// The room/level (e.g. "J") this wall was assigned to on `AddWallPage`,
+  /// for off-map walls only — real, server-mapped walls get their room
+  /// membership from the downloaded map geometry instead (see
+  /// `FloorWallsPage`'s `_roomFilters`).
+  final String? roomLabel;
 
   /// Matches FLUTTER_MOBILE_PLAN.md §2/§4: the capture entry point is
   /// available at every status — label swaps, the action is never disabled.
@@ -109,5 +116,6 @@ class WallEntity extends Equatable {
     status,
     lastCapture,
     grid,
+    roomLabel,
   ];
 }

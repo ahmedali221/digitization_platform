@@ -322,13 +322,6 @@ class CaptureSessionCubit extends Cubit<CaptureSessionState> {
     return highestShot + 1;
   }
 
-  void toggleExposureLock() {
-    final current = state;
-    if (current is CaptureSessionLoaded) {
-      emit(current.copyWith(exposureLocked: !current.exposureLocked));
-    }
-  }
-
   void saveFull() => _repository.saveFull(_floorId, _wallId);
 
   void savePartial() => _repository.savePartial(_floorId, _wallId);

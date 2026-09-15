@@ -149,6 +149,18 @@ class SiteRepositoryImpl implements SiteRepository {
   }
 
   @override
+  Future<void> archiveSite(String siteId) => _setArchived(siteId, true);
+
+  @override
+  Future<void> unarchiveSite(String siteId) => _setArchived(siteId, false);
+
+  Future<void> _setArchived(String siteId, bool isArchived) async {
+    final record = _local.getSite(siteId);
+    if (record == null) return;
+    await _local.putSite(record.copyWith(isArchived: isArchived));
+  }
+
+  @override
   void updateWall(
     String floorId,
     String wallId,
@@ -170,13 +182,23 @@ class SiteRepositoryImpl implements SiteRepository {
   }
 
   @override
-  void addWall(String floorId, {required String title, String notes = ''}) {
+  void addWall(
+    String floorId, {
+    required String title,
+    String notes = '',
+    String? roomLabel,
+  }) {
     // Local-only, same as the fake this replaces: a wall the operator adds
     // on-site that isn't in the published map yet. No server counterpart
     // or sync exists for these (full local-id resolution is Phase 5) — it
     // just needs to persist and appear locally, which this does.
     unawaited(
-      _local.addLocalWall(floorId: floorId, title: title, notes: notes),
+      _local.addLocalWall(
+        floorId: floorId,
+        title: title,
+        notes: notes,
+        roomLabel: roomLabel,
+      ),
     );
   }
 
@@ -227,6 +249,7 @@ class SiteRepositoryImpl implements SiteRepository {
             ? WallStatus.values.byName(localRecord.status)
             : WallStatus.notStarted,
         lastCapture: formatRelativeTime(localRecord?.updatedAt),
+        roomLabel: data['roomLabel'] as String?,
       );
     });
 

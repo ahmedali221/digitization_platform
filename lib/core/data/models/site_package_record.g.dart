@@ -25,13 +25,14 @@ class SitePackageRecordAdapter extends TypeAdapter<SitePackageRecord> {
       raw: (fields[5] as Map?)?.cast<dynamic, dynamic>(),
       localVersion: fields[6] as int?,
       downloadedAt: fields[7] as DateTime?,
+      isArchived: fields[8] == null ? false : fields[8] as bool,
     );
   }
 
   @override
   void write(BinaryWriter writer, SitePackageRecord obj) {
     writer
-      ..writeByte(8)
+      ..writeByte(9)
       ..writeByte(0)
       ..write(obj.siteId)
       ..writeByte(1)
@@ -47,7 +48,9 @@ class SitePackageRecordAdapter extends TypeAdapter<SitePackageRecord> {
       ..writeByte(6)
       ..write(obj.localVersion)
       ..writeByte(7)
-      ..write(obj.downloadedAt);
+      ..write(obj.downloadedAt)
+      ..writeByte(8)
+      ..write(obj.isArchived);
   }
 
   @override

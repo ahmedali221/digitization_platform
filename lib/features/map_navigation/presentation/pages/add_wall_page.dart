@@ -10,8 +10,10 @@ import '../../../../core/widgets/breadcrumb.dart';
 import '../../../../core/widgets/circle_icon_button.dart';
 import '../../../../core/widgets/primary_action_button.dart';
 
-/// Form page for adding a new wall to a floor — title (required) and notes
-/// (optional), replacing the old wall action sheet's lack of a create flow.
+/// Form page for adding a new wall to a floor — title (required), level/room
+/// (optional; joins an existing room's filter chip by matching label, or
+/// starts a new one) and notes (optional), replacing the old wall action
+/// sheet's lack of a create flow.
 class AddWallPage extends StatefulWidget {
   const AddWallPage({
     super.key,
@@ -31,12 +33,14 @@ class AddWallPage extends StatefulWidget {
 class _AddWallPageState extends State<AddWallPage> {
   final _titleController = TextEditingController();
   final _notesController = TextEditingController();
+  final _levelController = TextEditingController();
   String? _titleError;
 
   @override
   void dispose() {
     _titleController.dispose();
     _notesController.dispose();
+    _levelController.dispose();
     super.dispose();
   }
 
@@ -46,10 +50,12 @@ class _AddWallPageState extends State<AddWallPage> {
       setState(() => _titleError = 'Title is required');
       return;
     }
+    final level = _levelController.text.trim();
     GetIt.instance<SiteRepository>().addWall(
       widget.floorId,
       title: title,
       notes: _notesController.text.trim(),
+      roomLabel: level.isEmpty ? null : level,
     );
     context.safePop();
   }
@@ -148,6 +154,20 @@ class _AddWallPageState extends State<AddWallPage> {
                           setState(() => _titleError = null);
                         }
                       },
+                    ),
+                    const SizedBox(height: AppSpacing.lg),
+                    _FieldLabel('LEVEL'),
+                    const SizedBox(height: AppSpacing.sm),
+                    TextField(
+                      controller: _levelController,
+                      textCapitalization: TextCapitalization.characters,
+                      decoration: InputDecoration(
+                        hintText: 'e.g. J — matches an existing room, or '
+                            'starts a new one',
+                        border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(AppRadius.card),
+                        ),
+                      ),
                     ),
                     const SizedBox(height: AppSpacing.lg),
                     _FieldLabel('NOTES'),

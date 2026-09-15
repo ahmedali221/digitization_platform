@@ -22,6 +22,7 @@ class SitePackageRecord extends HiveObject {
     this.raw,
     this.localVersion,
     this.downloadedAt,
+    this.isArchived = false,
   });
 
   @HiveField(0)
@@ -54,6 +55,11 @@ class SitePackageRecord extends HiveObject {
   @HiveField(7)
   final DateTime? downloadedAt;
 
+  /// Locally hidden from the default sites list — see
+  /// `SiteEntity.isArchived`. Never sent to or read from the server.
+  @HiveField(8, defaultValue: false)
+  final bool isArchived;
+
   bool get isDownloaded => raw != null;
 
   SitePackageRecord copyWith({
@@ -64,6 +70,7 @@ class SitePackageRecord extends HiveObject {
     Map<dynamic, dynamic>? raw,
     int? localVersion,
     DateTime? downloadedAt,
+    bool? isArchived,
   }) {
     return SitePackageRecord(
       siteId: siteId,
@@ -74,6 +81,7 @@ class SitePackageRecord extends HiveObject {
       raw: raw ?? this.raw,
       localVersion: localVersion ?? this.localVersion,
       downloadedAt: downloadedAt ?? this.downloadedAt,
+      isArchived: isArchived ?? this.isArchived,
     );
   }
 }

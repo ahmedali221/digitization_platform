@@ -22,6 +22,7 @@ import UIKit
 @main
 @objc class AppDelegate: FlutterAppDelegate {
   private let channelName = "nilelens/capture_button"
+  private let lensInfoChannelName = "nilelens/lens_info"
   private var methodChannel: FlutterMethodChannel?
 
   private var captureButtonArmed = false
@@ -50,9 +51,60 @@ import UIKit
         result(nil)
       }
       methodChannel = channel
+
+      let lensInfoChannel = FlutterMethodChannel(
+        name: lensInfoChannelName,
+        binaryMessenger: controller.binaryMessenger
+      )
+      lensInfoChannel.setMethodCallHandler { [weak self] call, result in
+        guard call.method == "getBackLensRoles" else {
+          result(FlutterMethodNotImplemented)
+          return
+        }
+        result(self?.resolveBackLensRoles())
+      }
     }
 
     return super.application(application, didFinishLaunchingWithOptions: launchOptions)
+  }
+
+  /// Identifies the primary and (if present) ultra-wide back lenses the way
+  /// `camera_avfoundation` itself names them — `CameraDescription.name` on
+  /// iOS is the lens's `AVCaptureDevice.uniqueID` (see the plugin's
+  /// `CameraPlugin.m availableCamerasWithCompletion:`).
+  ///
+  /// Note this project's `third_party/camera_avfoundation` fork prefers a
+  /// single *virtual* multi-camera device (Triple/DualWide) for the back
+  /// position on capable iPhones, whose one `AVCaptureDevice` already spans
+  /// 0.5x-2x+ continuously — on those devices neither `.builtInWideAngleCamera`
+  /// nor `.builtInUltraWideCamera` (both standalone *physical* lenses) will
+  /// match the single `CameraDescription` `availableCameras()` actually
+  /// returns, so both lookups below intentionally miss and Dart falls back
+  /// to treating that one entry as primary with no separate ultra-wide to
+  /// switch to (correct, since the virtual device's own zoom already covers
+  /// it — see `_canReachUltraWide`'s fused-camera branch). This method still
+  /// earns its keep on older/simpler back camera setups (e.g. plain wide +
+  /// telephoto, no ultra-wide, no virtual device) where AVFoundation returns
+  /// two independent physical lenses and picking the wrong one as "primary"
+  /// is exactly the 1x-renders-as-something-else bug this exists to avoid.
+  /// 0.5x is Apple's own fixed convention for the ultra-wide lens on every
+  /// device that has one.
+  private func resolveBackLensRoles() -> [String: Any]? {
+    guard
+      let primary = AVCaptureDevice.default(
+        .builtInWideAngleCamera, for: .video, position: .back)
+    else {
+      return nil
+    }
+    let ultraWide = AVCaptureDevice.default(
+      .builtInUltraWideCamera, for: .video, position: .back)
+
+    var response: [String: Any] = ["primaryName": primary.uniqueID]
+    if let ultraWide = ultraWide {
+      response["ultraWideName"] = ultraWide.uniqueID
+      response["ultraWideZoomRatio"] = 0.5
+    }
+    return response
   }
 
   private func setCaptureButtonArmed(_ enabled: Bool) {

@@ -51,6 +51,7 @@ class SiteMapper {
       downloadProgress: downloadProgress,
       lastSynced: formatRelativeTime(siteRecord.downloadedAt),
       updateAvailable: updateAvailable,
+      isArchived: siteRecord.isArchived,
     );
   }
 

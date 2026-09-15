@@ -73,6 +73,7 @@ class SiteLocalDataSource {
     required String floorId,
     required String title,
     String notes = '',
+    String? roomLabel,
   }) async {
     final localId = 'local_${_uuid.v4().substring(0, 8)}';
     await _unassignedBox.put(localId, {
@@ -80,6 +81,7 @@ class SiteLocalDataSource {
       'title': title,
       'notes': notes,
       'createdAt': DateTime.now().toIso8601String(),
+      if (roomLabel != null && roomLabel.isNotEmpty) 'roomLabel': roomLabel,
     });
     return localId;
   }

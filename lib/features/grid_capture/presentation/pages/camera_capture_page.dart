@@ -8,9 +8,9 @@ import 'package:get_it/get_it.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../../../core/hardware/capture_button_channel.dart';
+import '../../../../core/hardware/lens_info_channel.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../../../core/theme/app_spacing.dart';
-import '../../../../core/theme/wall_status.dart';
 import '../../../../core/utils/navigation_extensions.dart';
 import '../../../../core/widgets/feedback_states.dart';
 import '../../data/datasources/grid_capture_local_data_source.dart';
@@ -19,6 +19,7 @@ import '../cubit/capture_session_cubit.dart';
 import '../cubit/capture_session_state.dart';
 import '../widgets/camera_grid_navigator.dart';
 import '../widgets/grid_capture_metrics.dart';
+import '../widgets/image_preview_dialog.dart';
 import '../widgets/quality_badge.dart';
 
 class CameraCapturePage extends StatelessWidget {
@@ -119,6 +120,20 @@ class _CameraBodyState extends State<_CameraBody> {
   double? _pendingZoom;
   bool _applyingZoom = false;
 
+  // Guards against overlapping camera-controller operations — e.g. tapping
+  // a zoom preset mid-capture, or firing the shutter mid-lens-switch — which
+  // is what let a `setZoomLevel`/`takePicture` call race a concurrent
+  // `dispose()` on the same native session and crash on iOS (AVFoundation
+  // has no protection against a platform call landing on a session that's
+  // being torn down at the same moment).
+  bool _switchingLens = false;
+
+  // Set synchronously at the top of `dispose()` (before `mounted` flips
+  // false) so an in-flight async method's next `await` sees it immediately
+  // and stops issuing further native calls against a controller this widget
+  // is in the middle of tearing down.
+  bool _disposed = false;
+
   // The primary lens's own range, cached once at startup — used to decide
   // which zoom presets to show regardless of which physical lens is
   // currently active (switching to the ultra-wide lens temporarily reports
@@ -131,11 +146,18 @@ class _CameraBodyState extends State<_CameraBody> {
   // ultra-wide lens. Only set when the primary lens can't already reach
   // below 1x itself (e.g. iOS's fused virtual multi-camera device — see
   // third_party/camera_avfoundation — already covers that case without a
-  // switch) and the device exposes a second back-facing camera to switch to.
+  // switch) and [LensInfoChannel] confirmed the device actually has a
+  // distinct ultra-wide lens to switch to.
   CameraDescription? _ultraWideCamera;
   bool _onUltraWideLens = false;
 
-  double get _displayZoom => _onUltraWideLens ? _currentZoom * 0.5 : _currentZoom;
+  // The ultra-wide lens's zoom multiplier relative to the primary lens, as
+  // reported by [LensInfoChannel] (e.g. 0.52 on a device whose "0.5x" lens
+  // isn't exactly half). Falls back to the conventional 0.5 when unknown.
+  double _ultraWideZoomRatio = 0.5;
+
+  double get _displayZoom =>
+      _onUltraWideLens ? _currentZoom * _ultraWideZoomRatio : _currentZoom;
 
   // True whenever 0.5x is actually reachable — either the primary lens
   // already natively zooms below 1x (no switch needed, e.g. iOS's fused
@@ -162,18 +184,20 @@ class _CameraBodyState extends State<_CameraBody> {
         });
         return;
       }
-      final backCameras =
-          cameras
-              .where((camera) => camera.lensDirection == CameraLensDirection.back)
-              .toList()
-            ..sort(
-              (a, b) => (int.tryParse(a.name) ?? 0).compareTo(
-                int.tryParse(b.name) ?? 0,
-              ),
-            );
-      final primaryCamera = backCameras.isNotEmpty
-          ? backCameras.first
-          : cameras.first;
+      final backCameras = cameras
+          .where((camera) => camera.lensDirection == CameraLensDirection.back)
+          .toList();
+      // Ask the platform which back lens is actually primary/ultra-wide —
+      // see LensInfoChannel's doc for why guessing from list order/name
+      // (the old approach) misidentifies lenses on several devices.
+      final lensRoles = await LensInfoChannel.getBackLensRoles();
+      final primaryCamera =
+          _findCameraByName(backCameras, lensRoles?.primaryName) ??
+          (backCameras.isNotEmpty ? backCameras.first : cameras.first);
+      final ultraWideCamera = _findCameraByName(
+        backCameras,
+        lensRoles?.ultraWideName,
+      );
       final controller = CameraController(
         primaryCamera,
         ResolutionPreset.high,
@@ -188,16 +212,12 @@ class _CameraBodyState extends State<_CameraBody> {
         await controller.dispose();
         return;
       }
-      final ultraWideCamera =
-          minimumZoom > 1 - _ZoomPresets._matchTolerance &&
-              backCameras.length > 1
-          ? backCameras[1]
-          : null;
       setState(() {
         _controller = controller;
         _loadState = _CameraLoadState.ready;
         _backCameras = backCameras;
         _ultraWideCamera = ultraWideCamera;
+        _ultraWideZoomRatio = lensRoles?.ultraWideZoomRatio ?? 0.5;
         _minimumZoom = minimumZoom;
         _maximumZoom = maximumZoom;
         _primaryMinimumZoom = minimumZoom;
@@ -216,6 +236,17 @@ class _CameraBodyState extends State<_CameraBody> {
     }
   }
 
+  static CameraDescription? _findCameraByName(
+    List<CameraDescription> cameras,
+    String? name,
+  ) {
+    if (name == null) return null;
+    for (final camera in cameras) {
+      if (camera.name == name) return camera;
+    }
+    return null;
+  }
+
   /// Switches the live controller to a different physical back lens (e.g.
   /// primary <-> ultra-wide). The previous controller keeps rendering until
   /// the new one has initialized, so the viewfinder never has to fall back
@@ -224,6 +255,12 @@ class _CameraBodyState extends State<_CameraBody> {
     CameraDescription description, {
     required bool isUltraWide,
   }) async {
+    // Re-entrancy guard: two overlapping switches (e.g. a double-tap across
+    // presets before the first finishes initializing) would otherwise create
+    // a second new controller while the first is still being wired up, and
+    // both could end up racing to dispose the same previous controller.
+    if (_switchingLens) return;
+    _switchingLens = true;
     final previousController = _controller;
     try {
       final newController = CameraController(
@@ -235,10 +272,19 @@ class _CameraBodyState extends State<_CameraBody> {
       final minimumZoom = await newController.getMinZoomLevel();
       final maximumZoom = await newController.getMaxZoomLevel();
       await newController.setZoomLevel(minimumZoom);
-      await newController.setExposureMode(
-        widget.state.exposureLocked ? ExposureMode.locked : ExposureMode.auto,
-      );
-      if (!mounted) {
+      if (!mounted || _disposed) {
+        await newController.dispose();
+        return;
+      }
+      // A pinch/preset zoom requested just before this switch may still have
+      // a `setZoomLevel` call in flight against `previousController` —
+      // disposing it while that native call is still executing is what let
+      // iOS crash (AVFoundation has no protection against a platform call
+      // landing on a session that's being torn down at the same instant).
+      while (_applyingZoom) {
+        await Future.delayed(const Duration(milliseconds: 10));
+      }
+      if (!mounted || _disposed) {
         await newController.dispose();
         return;
       }
@@ -263,11 +309,15 @@ class _CameraBodyState extends State<_CameraBody> {
           ),
         );
       }
+    } finally {
+      _switchingLens = false;
     }
   }
 
   Future<void> _handlePresetSelect(double level) async {
-    if (_loadState != _CameraLoadState.ready) return;
+    if (_loadState != _CameraLoadState.ready || _capturing || _switchingLens) {
+      return;
+    }
     final wantsUltraWide = level < 1;
     if (wantsUltraWide && _ultraWideCamera != null) {
       if (!_onUltraWideLens) {
@@ -283,9 +333,20 @@ class _CameraBodyState extends State<_CameraBody> {
 
   Future<void> _handleShutter() async {
     final controller = _controller;
-    if (controller == null || _capturing) return;
+    if (controller == null || _capturing || _switchingLens) return;
     setState(() => _capturing = true);
     try {
+      // On iOS, the primary "camera" is often a virtual multi-lens device
+      // (see third_party/camera_avfoundation's CameraPlugin.m fork) whose
+      // zoom crosses physical lenses internally as `videoZoomFactor`
+      // changes — capturing while that transition is still in flight (right
+      // after a pinch/preset zoom) is a known source of intermittent
+      // AVFoundation crashes on those devices, so wait for it to settle
+      // first rather than firing the shutter concurrently with it.
+      while (_applyingZoom) {
+        await Future.delayed(const Duration(milliseconds: 10));
+      }
+      if (!mounted || _disposed) return;
       final file = await controller.takePicture();
       if (!mounted) return;
       await context.read<CaptureSessionCubit>().takePhoto(file);
@@ -299,7 +360,7 @@ class _CameraBodyState extends State<_CameraBody> {
   }
 
   void _handleScaleUpdate(ScaleUpdateDetails details) {
-    if (details.pointerCount < 2) return;
+    if (details.pointerCount < 2 || _switchingLens || _capturing) return;
     _requestZoom(_baseZoom * details.scale);
   }
 
@@ -316,7 +377,7 @@ class _CameraBodyState extends State<_CameraBody> {
   Future<void> _applyPendingZoom() async {
     _applyingZoom = true;
     try {
-      while (mounted && _pendingZoom != null) {
+      while (mounted && !_disposed && _pendingZoom != null) {
         final zoom = _pendingZoom!;
         _pendingZoom = null;
         await _controller?.setZoomLevel(zoom);
@@ -337,12 +398,14 @@ class _CameraBodyState extends State<_CameraBody> {
       }
     } finally {
       _applyingZoom = false;
-      if (mounted && _pendingZoom != null) unawaited(_applyPendingZoom());
+      if (mounted && !_disposed && _pendingZoom != null) {
+        unawaited(_applyPendingZoom());
+      }
     }
   }
 
   Future<void> _handleDeletePhoto(int cellId, String path) async {
-    if (_capturing || _deletingPaths.contains(path)) return;
+    if (_capturing || _switchingLens || _deletingPaths.contains(path)) return;
     setState(() => _deletingPaths.add(path));
     try {
       await context.read<CaptureSessionCubit>().deletePhoto(cellId, path);
@@ -364,24 +427,36 @@ class _CameraBodyState extends State<_CameraBody> {
   /// review first.
   void _handleSave() {
     context.read<CaptureSessionCubit>().savePartial();
-    context.go(
+    // popToPath (not go()) so the floor's wall list is revealed rather than
+    // rebuilt — go() would reset its room filter and any other in-memory
+    // state, and collapse the back stack down to just this page.
+    context.popToPath(
       '/sites/${widget.siteId}/buildings/${widget.buildingId}/floors/${widget.floorId}',
     );
   }
 
-  Future<void> _handleExposureToggle() async {
-    final controller = _controller;
-    final cubit = context.read<CaptureSessionCubit>();
-    final nextLocked = !widget.state.exposureLocked;
-    cubit.toggleExposureLock();
-    if (controller == null) return;
-    await controller.setExposureMode(
-      nextLocked ? ExposureMode.locked : ExposureMode.auto,
-    );
+  /// Advances the active cell to the next one in row-major order. A no-op
+  /// past the last cell — there's nothing further to move to — and while a
+  /// shutter capture is still in flight: [CaptureSessionCubit.takePhoto]
+  /// attaches the photo to whichever cell is active at the moment it
+  /// finishes, not whichever was active when the shutter was pressed, so
+  /// switching cells mid-capture would misattribute the photo to the newly
+  /// active one instead (the cell strip's own taps are already disabled
+  /// during capture for the same reason — see `CameraGridNavigator`'s
+  /// `enabled: !_capturing` below).
+  void _handleNextCell(int activeCellId, int cellCount) {
+    if (_capturing) return;
+    final nextCellId = activeCellId + 1;
+    if (nextCellId >= cellCount) return;
+    context.read<CaptureSessionCubit>().openCell(nextCellId);
   }
 
   @override
   void dispose() {
+    // Set first, synchronously, so any in-flight async camera method's next
+    // `await` sees it before this method disposes the controller out from
+    // under it — see `_disposed`'s doc comment.
+    _disposed = true;
     CaptureButtonChannel.stop();
     _controller?.dispose();
     super.dispose();
@@ -400,6 +475,7 @@ class _CameraBodyState extends State<_CameraBody> {
     final col = activeCellId % grid.cols + 1;
     final cellLabel = 'R${row}C$col';
     final shotPaths = grid.cells[activeCellId].shotPaths;
+    final hasNextCell = activeCellId + 1 < grid.cells.length;
 
     return Column(
       children: [
@@ -441,11 +517,12 @@ class _CameraBodyState extends State<_CameraBody> {
                     _SaveButton(onTap: _capturing ? null : _handleSave),
                     const SizedBox(height: AppSpacing.sm),
                     _RoundIconButton(
-                      icon: Icons.lock,
-                      iconColor: widget.state.exposureLocked
-                          ? WallStatus.inProgress.meta.border
-                          : Colors.white,
-                      onTap: _handleExposureToggle,
+                      icon: Icons.skip_next,
+                      iconColor: hasNextCell && !_capturing
+                          ? Colors.white
+                          : Colors.white38,
+                      onTap: () =>
+                          _handleNextCell(activeCellId, grid.cells.length),
                     ),
                   ],
                 ),
@@ -489,7 +566,10 @@ class _CameraBodyState extends State<_CameraBody> {
           shotPaths: shotPaths,
           deletingPaths: _deletingPaths,
           onDelete: (path) => _handleDeletePhoto(activeCellId, path),
-          onShutter: _loadState == _CameraLoadState.ready && !_capturing
+          onShutter:
+              _loadState == _CameraLoadState.ready &&
+                  !_capturing &&
+                  !_switchingLens
               ? _handleShutter
               : null,
         ),
@@ -909,14 +989,17 @@ class _ThumbnailTile extends StatelessWidget {
       child: Stack(
         children: [
           Positioned.fill(
-            child: Image.file(
-              File(path),
-              fit: BoxFit.cover,
-              errorBuilder: (context, error, stackTrace) => const Center(
-                child: Icon(
-                  Icons.image,
-                  size: 22,
-                  color: AppColors.onSurfaceMuted,
+            child: InkWell(
+              onTap: () => ImagePreviewDialog.show(context, path),
+              child: Image.file(
+                File(path),
+                fit: BoxFit.cover,
+                errorBuilder: (context, error, stackTrace) => const Center(
+                  child: Icon(
+                    Icons.image,
+                    size: 22,
+                    color: AppColors.onSurfaceMuted,
+                  ),
                 ),
               ),
             ),

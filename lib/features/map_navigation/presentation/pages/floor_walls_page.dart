@@ -307,10 +307,67 @@ List<_RoomFilter> _roomFilters(
   FloorRoomsGeometry? geometry,
   List<WallEntity> walls,
 ) {
+  final geometryRooms = geometry?.rooms ?? const <FloorRoomGeometry>[];
+  final wallIdsByRoomId = {
+    for (final room in geometryRooms) room.id: Set<String>.of(room.wallIds),
+  };
+  final geometryAssignedWallIds = wallIdsByRoomId.values
+      .expand((ids) => ids)
+      .toSet();
+
+  // Local walls (`AddWallPage`) carry their own `roomLabel` instead of real
+  // geometry membership — fold each into the matching geometry room by
+  // label (case-insensitive), or start a new local-only room filter for a
+  // label that doesn't exist yet, so the "level" typed at creation time
+  // actually groups the wall instead of always landing in "Unassigned".
+  final localRoomIdByLabel = <String, String>{};
+  final localRoomLabelById = <String, String>{};
+  final localRoomOrder = <String>[];
+
+  for (final wall in walls) {
+    if (geometryAssignedWallIds.contains(wall.id)) continue;
+    final label = wall.roomLabel?.trim();
+    if (label == null || label.isEmpty) continue;
+
+    FloorRoomGeometry? matched;
+    for (final room in geometryRooms) {
+      if (room.label.toLowerCase() == label.toLowerCase()) {
+        matched = room;
+        break;
+      }
+    }
+    if (matched != null) {
+      wallIdsByRoomId[matched.id]!.add(wall.id);
+      continue;
+    }
+
+    final key = label.toLowerCase();
+    var roomId = localRoomIdByLabel[key];
+    if (roomId == null) {
+      roomId = '_local_room_$key';
+      localRoomIdByLabel[key] = roomId;
+      localRoomLabelById[roomId] = label;
+      localRoomOrder.add(roomId);
+      wallIdsByRoomId[roomId] = <String>{};
+    }
+    wallIdsByRoomId[roomId]!.add(wall.id);
+  }
+
   final rooms = [
-    for (final room in geometry?.rooms ?? const <FloorRoomGeometry>[])
-      _RoomFilter(id: room.id, label: room.label, wallIds: room.wallIds),
+    for (final room in geometryRooms)
+      _RoomFilter(
+        id: room.id,
+        label: room.label,
+        wallIds: wallIdsByRoomId[room.id]!,
+      ),
+    for (final roomId in localRoomOrder)
+      _RoomFilter(
+        id: roomId,
+        label: localRoomLabelById[roomId]!,
+        wallIds: wallIdsByRoomId[roomId]!,
+      ),
   ];
+
   final assignedWallIds = rooms.expand((room) => room.wallIds).toSet();
   final unassignedWallIds = walls
       .where((wall) => !assignedWallIds.contains(wall.id))

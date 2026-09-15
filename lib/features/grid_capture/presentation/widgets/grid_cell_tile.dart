@@ -6,6 +6,7 @@ import '../../../../core/theme/app_colors.dart';
 import '../../../../core/theme/app_spacing.dart';
 import '../../../../core/theme/wall_status.dart';
 import '../../domain/entities/capture_quality.dart';
+import '../theme/quality_tier_meta.dart';
 import 'grid_capture_metrics.dart';
 import 'quality_badge.dart';
 
@@ -27,6 +28,7 @@ class GridCellTile extends StatelessWidget {
     this.isSelected = false,
     this.mode = GridCellMode.capture,
     this.qualityTier,
+    this.qualityScore,
     this.onTap,
   });
 
@@ -39,6 +41,12 @@ class GridCellTile extends StatelessWidget {
   /// Capture Quality Indicator heat color for this cell's current shot
   /// (spec §5) — null while unscored or empty; never shown without a photo.
   final QualityTier? qualityTier;
+
+  /// [CellQualityResult.cellScore], rounded — shown alongside the tier dot
+  /// on the coverage-review grid only (spec's badge already shows this on
+  /// the camera screen; the grid tile had no room for it before). Null
+  /// whenever [qualityTier] is null.
+  final int? qualityScore;
   final VoidCallback? onTap;
 
   bool get _hasPhotos => photoCount > 0;
@@ -100,7 +108,9 @@ class GridCellTile extends StatelessWidget {
             Positioned(
               top: 6,
               right: 6,
-              child: QualityDot(tier: qualityTier!),
+              child: qualityScore == null
+                  ? QualityDot(tier: qualityTier!)
+                  : _ScoreChip(tier: qualityTier!, score: qualityScore!),
             ),
         ],
       ),
@@ -114,6 +124,37 @@ class GridCellTile extends StatelessWidget {
         onTap: onTap,
         borderRadius: BorderRadius.circular(AppRadius.card),
         child: content,
+      ),
+    );
+  }
+}
+
+/// [QualityDot] with the numeric score alongside it — the coverage-review
+/// grid has room a dense per-cell tile doesn't, so it doesn't need to make
+/// the operator open the camera screen's badge just to see the number.
+class _ScoreChip extends StatelessWidget {
+  const _ScoreChip({required this.tier, required this.score});
+
+  final QualityTier tier;
+  final int score;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 2),
+      decoration: BoxDecoration(
+        color: tier.meta.color,
+        borderRadius: BorderRadius.circular(999),
+        border: Border.all(color: Colors.white, width: 1.5),
+      ),
+      child: Text(
+        '$score',
+        style: const TextStyle(
+          color: Colors.white,
+          fontSize: 10,
+          fontWeight: FontWeight.w800,
+          height: 1,
+        ),
       ),
     );
   }

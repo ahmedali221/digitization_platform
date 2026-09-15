@@ -22,6 +22,11 @@ class SitesLoaded extends SitesState {
   int get readyCount => sites.where((site) => site.isReady).length;
   int get totalCount => sites.length;
 
+  List<SiteEntity> get activeSites =>
+      sites.where((site) => !site.isArchived).toList();
+  List<SiteEntity> get archivedSites =>
+      sites.where((site) => site.isArchived).toList();
+
   SitesLoaded copyWith({List<SiteEntity>? sites, bool? isOffline}) =>
       SitesLoaded(
         sites: sites ?? this.sites,
