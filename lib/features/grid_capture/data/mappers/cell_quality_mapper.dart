@@ -25,6 +25,8 @@ class CellQualityMapper {
       status: _tierToString(result.tier),
       failureReason: result.failureReason,
       computedAt: result.computedAt,
+      imagePath: result.imagePath,
+      allShotScores: result.allShotScores.map(_shotScoreToRecord).toList(),
     );
   }
 
@@ -36,6 +38,7 @@ class CellQualityMapper {
     return CellQualityResult(
       cellIndex: cellIndex,
       overridden: overridden,
+      imagePath: record.imagePath ?? '',
       image: ImageQualityMetrics(
         keypointCount: record.keypointCount,
         keypointDensity: record.keypointDensity,
@@ -56,6 +59,7 @@ class CellQualityMapper {
       tier: _tierFromString(record.status),
       failureReason: record.failureReason,
       computedAt: record.computedAt,
+      allShotScores: record.allShotScores.map(_shotScoreToMetrics).toList(),
     );
   }
 
@@ -88,6 +92,22 @@ class CellQualityMapper {
       directionOk: r.directionOk,
       scaleOk: r.scaleOk,
       neighbourScore: r.neighbourScore,
+    );
+  }
+
+  static ShotQualityScoreRecord _shotScoreToRecord(ShotQualityScore s) {
+    return ShotQualityScoreRecord(
+      imagePath: s.imagePath,
+      cellScore: s.cellScore,
+      status: _tierToString(s.tier),
+    );
+  }
+
+  static ShotQualityScore _shotScoreToMetrics(ShotQualityScoreRecord r) {
+    return ShotQualityScore(
+      imagePath: r.imagePath,
+      cellScore: r.cellScore,
+      tier: _tierFromString(r.status),
     );
   }
 

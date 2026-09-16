@@ -4,20 +4,31 @@ import 'package:flutter/material.dart';
 
 import '../../../../core/theme/app_colors.dart';
 import '../../../../core/theme/app_spacing.dart';
+import '../../domain/entities/capture_quality.dart';
+import '../theme/quality_tier_meta.dart';
+import 'quality_badge.dart';
 
 /// Full-screen, pinch-to-zoom preview of a captured photo. Opened from a
 /// thumbnail tap so the operator can check focus/framing without leaving
-/// the capture flow.
+/// the capture flow. [score], when given, is THIS specific shot's own
+/// Capture Quality Indicator result — a cell can hold several retakes, and
+/// each one scores independently (see `CellQualityResult.allShotScores`),
+/// so this must never default to the cell's overall/winning score.
 class ImagePreviewDialog extends StatelessWidget {
-  const ImagePreviewDialog({super.key, required this.path});
+  const ImagePreviewDialog({super.key, required this.path, this.score});
 
   final String path;
+  final ShotQualityScore? score;
 
-  static Future<void> show(BuildContext context, String path) {
+  static Future<void> show(
+    BuildContext context,
+    String path, {
+    ShotQualityScore? score,
+  }) {
     return showDialog<void>(
       context: context,
       barrierColor: Colors.black,
-      builder: (_) => ImagePreviewDialog(path: path),
+      builder: (_) => ImagePreviewDialog(path: path, score: score),
     );
   }
 
@@ -44,6 +55,12 @@ class ImagePreviewDialog extends StatelessWidget {
               ),
             ),
           ),
+          if (score != null)
+            Positioned(
+              top: AppSpacing.md,
+              left: AppSpacing.md,
+              child: SafeArea(child: _ShotScoreBadge(score: score!)),
+            ),
           Positioned(
             top: AppSpacing.md,
             right: AppSpacing.md,
@@ -62,6 +79,34 @@ class ImagePreviewDialog extends StatelessWidget {
                 ),
               ),
             ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _ShotScoreBadge extends StatelessWidget {
+  const _ShotScoreBadge({required this.score});
+
+  final ShotQualityScore score;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: AppSpacing.sm, vertical: AppSpacing.xs),
+      decoration: BoxDecoration(
+        color: AppColors.cameraScrim,
+        borderRadius: BorderRadius.circular(999),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          QualityDot(tier: score.tier, size: 10),
+          const SizedBox(width: AppSpacing.xs),
+          Text(
+            '${score.cellScore.round()} · ${score.tier.meta.meaning}',
+            style: const TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.w700),
           ),
         ],
       ),

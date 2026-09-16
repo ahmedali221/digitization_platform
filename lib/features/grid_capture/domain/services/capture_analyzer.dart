@@ -27,14 +27,19 @@ class NeighbourImageInput {
 class CellQualityRequest {
   const CellQualityRequest({
     required this.cellIndex,
-    required this.imagePath,
+    required this.imagePaths,
     required this.relevantEdges,
     this.neighbours = const [],
     this.config = const CaptureQualityConfig(),
   });
 
   final int cellIndex;
-  final String imagePath;
+
+  /// Every shot captured for this cell so far — never empty. Each is scored
+  /// independently against [neighbours] and the highest-scoring one wins
+  /// (see [analyzeCellQuality]), so a cell with a bad first attempt and a
+  /// good retake isn't penalized for keeping both.
+  final List<String> imagePaths;
   final Set<EdgeSide> relevantEdges;
   final List<NeighbourImageInput> neighbours;
   final CaptureQualityConfig config;
@@ -108,40 +113,76 @@ CellQualityResult analyzeCellQuality(CellQualityRequest request) {
       return features;
     }
 
-    final self = featuresFor(request.imagePath);
-    final image = _scoreImage(self, request.relevantEdges, config);
-
-    final neighbours = <NeighbourMatchMetrics>[];
-    for (final n in request.neighbours) {
-      final neighbourFeatures = featuresFor(n.imagePath);
-      neighbours.add(
-        _scoreNeighbour(
-          matcher: matcher,
-          self: self,
-          neighbour: neighbourFeatures,
-          direction: n.direction,
-          neighbourCellIndex: n.cellIndex,
-          config: config,
-        ),
+    if (request.imagePaths.isEmpty) {
+      throw StateError(
+        'capture_analyzer: no images to score for cell ${request.cellIndex}',
       );
     }
 
-    final cellScore = _combineCellScore(image, neighbours, config);
-    final tier = qualityTierForScore(
-      cellScore,
-      redMaxScore: config.redMaxScore,
-      orangeMaxScore: config.orangeMaxScore,
-      yellowMaxScore: config.yellowMaxScore,
-    );
+    // Score every shot taken for this cell independently and keep whichever
+    // scores highest — a cell with a weak first attempt and a strong retake
+    // must be judged (and later stitched/previewed) by the retake, not
+    // whichever photo happened to land first. Every candidate's score is
+    // kept in `allShotScores` too, so a shot that *wasn't* picked can still
+    // show its own score when the operator taps it directly.
+    CellQualityResult? best;
+    final allShotScores = <ShotQualityScore>[];
+    for (final candidatePath in request.imagePaths) {
+      final self = featuresFor(candidatePath);
+      final image = _scoreImage(self, request.relevantEdges, config);
+
+      final neighbours = <NeighbourMatchMetrics>[];
+      for (final n in request.neighbours) {
+        final neighbourFeatures = featuresFor(n.imagePath);
+        neighbours.add(
+          _scoreNeighbour(
+            matcher: matcher,
+            self: self,
+            neighbour: neighbourFeatures,
+            direction: n.direction,
+            neighbourCellIndex: n.cellIndex,
+            config: config,
+          ),
+        );
+      }
+
+      final cellScore = _combineCellScore(image, neighbours, config);
+      final tier = qualityTierForScore(
+        cellScore,
+        redMaxScore: config.redMaxScore,
+        orangeMaxScore: config.orangeMaxScore,
+        yellowMaxScore: config.yellowMaxScore,
+      );
+      allShotScores.add(
+        ShotQualityScore(imagePath: candidatePath, cellScore: cellScore, tier: tier),
+      );
+
+      final candidate = CellQualityResult(
+        cellIndex: request.cellIndex,
+        imagePath: candidatePath,
+        image: image,
+        neighbours: neighbours,
+        cellScore: cellScore,
+        tier: tier,
+        failureReason: pickFailureReason(image, neighbours, tier, config),
+        computedAt: DateTime.now(),
+      );
+
+      if (best == null || candidate.cellScore > best.cellScore) {
+        best = candidate;
+      }
+    }
 
     return CellQualityResult(
-      cellIndex: request.cellIndex,
-      image: image,
-      neighbours: neighbours,
-      cellScore: cellScore,
-      tier: tier,
-      failureReason: pickFailureReason(image, neighbours, tier, config),
-      computedAt: DateTime.now(),
+      cellIndex: best!.cellIndex,
+      imagePath: best.imagePath,
+      image: best.image,
+      neighbours: best.neighbours,
+      cellScore: best.cellScore,
+      tier: best.tier,
+      failureReason: best.failureReason,
+      computedAt: best.computedAt,
+      allShotScores: allShotScores,
     );
   } finally {
     for (final dispose in disposables) {

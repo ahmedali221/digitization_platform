@@ -113,7 +113,7 @@ void main() {
       final result = analyzeCellQuality(
         CellQualityRequest(
           cellIndex: indexByFolder[cell.folder]!,
-          imagePath: imagePath,
+          imagePaths: [imagePath],
           relevantEdges: relevantEdges,
           neighbours: neighbours,
         ),

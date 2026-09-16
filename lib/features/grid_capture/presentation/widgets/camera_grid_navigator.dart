@@ -137,15 +137,16 @@ class _CameraGridNavigatorState extends State<CameraGridNavigator> {
                   final row = index ~/ widget.grid.cols + 1;
                   final col = index % widget.grid.cols + 1;
                   final shotPaths = widget.grid.cells[index].shotPaths;
+                  final quality = widget.cellQuality[index];
                   return SizedBox(
                     width: _cellWidth,
                     child: _CameraGridCell(
                       key: ValueKey('camera-grid-cell-$index'),
                       label: 'R${row}C$col',
                       photoCount: widget.grid.cells[index].photoCount,
-                      thumbnailPath: shotPaths.isEmpty ? null : shotPaths.first,
+                      thumbnailPath: representativeShotPath(shotPaths, quality),
                       isActive: index == widget.activeCellIndex,
-                      qualityTier: widget.cellQuality[index]?.tier,
+                      qualityTier: quality?.tier,
                       onTap: widget.enabled
                           ? () => widget.onCellSelected(index)
                           : null,

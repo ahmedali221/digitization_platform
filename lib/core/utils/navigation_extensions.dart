@@ -22,8 +22,20 @@ extension SafePopExtension on BuildContext {
 extension PopToPathExtension on BuildContext {
   void popToPath(String path) {
     final router = GoRouter.of(this);
+    // Deliberately NOT `currentConfiguration.uri.path`: `RouteMatchList.push`
+    // (go_router's own `copyWith`) carries the *base* list's `uri` forward
+    // unchanged onto the merged list, so after a chain of `context.push()`
+    // calls (site -> building -> floor -> wall -> capture, all pushes)
+    // `uri.path` stays pinned at wherever the last `go()`/initial location
+    // was — e.g. `/sites` — no matter how deep the stack actually is. That
+    // made this comparison never match, so the loop below silently popped
+    // all the way to the app root (home) instead of stopping at [path].
+    // Each individual match's own `matchedLocation`, in contrast, is the
+    // real concrete location for that stack entry.
     while (router.canPop() &&
-        router.routerDelegate.currentConfiguration.uri.path != path) {
+        router.routerDelegate.currentConfiguration.matches.last
+                .matchedLocation !=
+            path) {
       router.pop();
     }
   }

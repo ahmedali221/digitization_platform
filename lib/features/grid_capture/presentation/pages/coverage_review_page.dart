@@ -121,7 +121,7 @@ class _CoverageReviewContent extends StatelessWidget {
               return GridCellTile(
                 label: 'R${row}C$col',
                 photoCount: grid.cells[index].photoCount,
-                thumbnailPath: shotPaths.isEmpty ? null : shotPaths.first,
+                thumbnailPath: representativeShotPath(shotPaths, quality),
                 mode: GridCellMode.review,
                 qualityTier: quality?.tier,
                 qualityScore: quality?.cellScore.round(),
@@ -161,12 +161,14 @@ class _CoverageReviewContent extends StatelessWidget {
                 enabled: grid.isComplete,
                 onTap: () {
                   context.read<CaptureSessionCubit>().saveFull();
-                  // popToPath (not go()) so the floor's wall list is
-                  // revealed rather than rebuilt — see camera_capture_page's
-                  // _handleSave for why.
-                  context.popToPath(
-                    '/sites/$siteId/buildings/$buildingId/floors/$floorId',
-                  );
+                  // A single pop — not popToPath — back to GridCapturePage:
+                  // this screen is only ever reached by GridCapturePage's
+                  // `_openCoverageReview` pushing it, so its immediate
+                  // parent in the stack is always the wall's grid overview.
+                  // `_openCoverageReview` awaits this push and refreshes its
+                  // own cubit once it resolves, so the grid overview picks
+                  // up this save without needing anything further here.
+                  context.safePop();
                 },
               ),
               const SizedBox(height: GridCaptureMetrics.gap),
@@ -176,9 +178,7 @@ class _CoverageReviewContent extends StatelessWidget {
                 textColor: AppColors.onWarningContainer,
                 onTap: () {
                   context.read<CaptureSessionCubit>().savePartial();
-                  context.popToPath(
-                    '/sites/$siteId/buildings/$buildingId/floors/$floorId',
-                  );
+                  context.safePop();
                 },
               ),
             ],
@@ -234,9 +234,10 @@ class _CoverageReviewContent extends StatelessWidget {
     final request = GridPreviewRequest(
       rows: grid.rows,
       cols: grid.cols,
-      cellShotPaths: grid.cells
-          .map((cell) => cell.shotPaths.isEmpty ? null : cell.shotPaths.first)
-          .toList(),
+      cellShotPaths: [
+        for (var i = 0; i < grid.cells.length; i++)
+          representativeShotPath(grid.cells[i].shotPaths, state.cellQuality[i]),
+      ],
       cellTiers: {
         for (final entry in state.cellQuality.entries) entry.key: entry.value.tier,
       },

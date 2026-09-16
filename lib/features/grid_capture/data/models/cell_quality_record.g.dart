@@ -71,6 +71,47 @@ class NeighbourQualityRecordAdapter
           typeId == other.typeId;
 }
 
+class ShotQualityScoreRecordAdapter
+    extends TypeAdapter<ShotQualityScoreRecord> {
+  @override
+  final int typeId = 11;
+
+  @override
+  ShotQualityScoreRecord read(BinaryReader reader) {
+    final numOfFields = reader.readByte();
+    final fields = <int, dynamic>{
+      for (int i = 0; i < numOfFields; i++) reader.readByte(): reader.read(),
+    };
+    return ShotQualityScoreRecord(
+      imagePath: fields[0] as String,
+      cellScore: fields[1] as double,
+      status: fields[2] as String,
+    );
+  }
+
+  @override
+  void write(BinaryWriter writer, ShotQualityScoreRecord obj) {
+    writer
+      ..writeByte(3)
+      ..writeByte(0)
+      ..write(obj.imagePath)
+      ..writeByte(1)
+      ..write(obj.cellScore)
+      ..writeByte(2)
+      ..write(obj.status);
+  }
+
+  @override
+  int get hashCode => typeId.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is ShotQualityScoreRecordAdapter &&
+          runtimeType == other.runtimeType &&
+          typeId == other.typeId;
+}
+
 class CellQualityRecordAdapter extends TypeAdapter<CellQualityRecord> {
   @override
   final int typeId = 9;
@@ -98,13 +139,17 @@ class CellQualityRecordAdapter extends TypeAdapter<CellQualityRecord> {
       status: fields[13] as String,
       failureReason: fields[14] as String?,
       computedAt: fields[15] as DateTime,
+      imagePath: fields[16] as String?,
+      allShotScores: fields[17] == null
+          ? []
+          : (fields[17] as List).cast<ShotQualityScoreRecord>(),
     );
   }
 
   @override
   void write(BinaryWriter writer, CellQualityRecord obj) {
     writer
-      ..writeByte(16)
+      ..writeByte(18)
       ..writeByte(0)
       ..write(obj.keypointCount)
       ..writeByte(1)
@@ -136,7 +181,11 @@ class CellQualityRecordAdapter extends TypeAdapter<CellQualityRecord> {
       ..writeByte(14)
       ..write(obj.failureReason)
       ..writeByte(15)
-      ..write(obj.computedAt);
+      ..write(obj.computedAt)
+      ..writeByte(16)
+      ..write(obj.imagePath)
+      ..writeByte(17)
+      ..write(obj.allShotScores);
   }
 
   @override

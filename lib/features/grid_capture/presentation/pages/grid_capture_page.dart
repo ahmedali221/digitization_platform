@@ -9,6 +9,7 @@ import '../../../../core/widgets/circle_icon_button.dart';
 import '../../../../core/widgets/feedback_states.dart';
 import '../../../../core/widgets/primary_action_button.dart';
 import '../../data/datasources/grid_capture_local_data_source.dart';
+import '../../domain/entities/capture_quality.dart';
 import '../../domain/repositories/grid_capture_repository.dart';
 import '../cubit/capture_session_cubit.dart';
 import '../cubit/capture_session_state.dart';
@@ -117,12 +118,13 @@ class _GridCaptureContent extends StatelessWidget {
               final row = index ~/ grid.cols + 1;
               final col = index % grid.cols + 1;
               final shotPaths = grid.cells[index].shotPaths;
+              final quality = state.cellQuality[index];
               return GridCellTile(
                 label: 'R${row}C$col',
                 photoCount: grid.cells[index].photoCount,
-                thumbnailPath: shotPaths.isEmpty ? null : shotPaths.first,
+                thumbnailPath: representativeShotPath(shotPaths, quality),
                 isSelected: state.activeCellId == index,
-                qualityTier: state.cellQuality[index]?.tier,
+                qualityTier: quality?.tier,
                 onTap: () => _openCamera(context, index),
               );
             },

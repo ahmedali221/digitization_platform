@@ -214,9 +214,9 @@ class CaptureSessionCubit extends Cubit<CaptureSessionState> {
   }
 
   /// Runs Tier 1 (always) and Tier 2/3 (for every grid-adjacent cell that
-  /// already has a photo) for [cellIndex]'s current shot (shotPaths.first —
-  /// same photo GridCellTile/the preview already treat as "the" shot for a
-  /// cell), off the main isolate. A no-op if the cell has no photo, or an
+  /// already has a photo) for [cellIndex]'s shots — every one taken for that
+  /// cell, not just the first, so a strong retake wins over a weak initial
+  /// attempt — off the main isolate. A no-op if the cell has no photo, or an
   /// analysis for it is already in flight.
   Future<void> _analyzeCellQuality(int cellIndex) async {
     final started = state;
@@ -244,7 +244,10 @@ class CaptureSessionCubit extends Cubit<CaptureSessionState> {
           NeighbourImageInput(
             direction: entry.key,
             cellIndex: entry.value,
-            imagePath: grid.cells[entry.value].shotPaths.first,
+            imagePath: representativeShotPath(
+              grid.cells[entry.value].shotPaths,
+              started.cellQuality[entry.value],
+            )!,
           ),
     ];
 
@@ -253,7 +256,7 @@ class CaptureSessionCubit extends Cubit<CaptureSessionState> {
         analyzeCellQuality,
         CellQualityRequest(
           cellIndex: cellIndex,
-          imagePath: shotPaths.first,
+          imagePaths: shotPaths,
           relevantEdges: neighbourCells.keys.map((d) => d.edge).toSet(),
           neighbours: capturedNeighbours,
         ),

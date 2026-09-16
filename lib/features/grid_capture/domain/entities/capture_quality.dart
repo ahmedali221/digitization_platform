@@ -164,11 +164,30 @@ class NeighbourMatchMetrics extends Equatable {
   ];
 }
 
+/// One candidate shot's score, kept alongside the winning [CellQualityResult]
+/// so a shot that *wasn't* picked can still show its own score/tier when the
+/// operator taps it directly, rather than always showing the winner's.
+class ShotQualityScore extends Equatable {
+  const ShotQualityScore({
+    required this.imagePath,
+    required this.cellScore,
+    required this.tier,
+  });
+
+  final String imagePath;
+  final double cellScore;
+  final QualityTier tier;
+
+  @override
+  List<Object?> get props => [imagePath, cellScore, tier];
+}
+
 /// One cell's full capture-quality verdict — the record persisted per spec
 /// §8, and what drives the heat badge (spec §5) and failure reason (§6).
 class CellQualityResult extends Equatable {
   const CellQualityResult({
     required this.cellIndex,
+    required this.imagePath,
     required this.image,
     required this.neighbours,
     required this.cellScore,
@@ -176,10 +195,23 @@ class CellQualityResult extends Equatable {
     required this.failureReason,
     required this.computedAt,
     this.overridden = false,
+    this.allShotScores = const [],
   });
 
   final int cellIndex;
+
+  /// Which of the cell's (possibly several) shots this result was scored
+  /// from — the highest-scoring one when more than one was submitted, per
+  /// [analyzeCellQuality]. Empty for results persisted before this field
+  /// existed; callers should fall back to the cell's first shot in that case.
+  final String imagePath;
   final ImageQualityMetrics image;
+
+  /// Every shot [analyzeCellQuality] scored for this cell, [imagePath]
+  /// included — lets the operator tap any individual retake and see that
+  /// specific photo's own score, not just the winner's. Empty for results
+  /// persisted before this field existed.
+  final List<ShotQualityScore> allShotScores;
 
   /// One entry per grid-adjacent cell that already has a photo — up to 4.
   final List<NeighbourMatchMetrics> neighbours;
@@ -205,6 +237,7 @@ class CellQualityResult extends Equatable {
 
   CellQualityResult withOverridden(bool value) => CellQualityResult(
     cellIndex: cellIndex,
+    imagePath: imagePath,
     image: image,
     neighbours: neighbours,
     cellScore: cellScore,
@@ -212,11 +245,23 @@ class CellQualityResult extends Equatable {
     failureReason: failureReason,
     computedAt: computedAt,
     overridden: value,
+    allShotScores: allShotScores,
   );
+
+  /// This cell's score for [path], whether or not it's the winning shot —
+  /// falls back to the overall result when [path] isn't in [allShotScores]
+  /// (a result persisted before per-shot scores existed).
+  ShotQualityScore scoreFor(String path) {
+    for (final shot in allShotScores) {
+      if (shot.imagePath == path) return shot;
+    }
+    return ShotQualityScore(imagePath: path, cellScore: cellScore, tier: tier);
+  }
 
   @override
   List<Object?> get props => [
     cellIndex,
+    imagePath,
     image,
     neighbours,
     cellScore,
@@ -224,5 +269,18 @@ class CellQualityResult extends Equatable {
     failureReason,
     overridden,
     computedAt,
+    allShotScores,
   ];
+}
+
+/// The shot to treat as "the" photo for a cell — the one Tier 1-3 scoring
+/// picked as best-of-N ([CellQualityResult.imagePath]) when it's still
+/// among the cell's current shots, else the earliest capture (no score yet,
+/// or the scored shot was since deleted).
+String? representativeShotPath(List<String> shotPaths, CellQualityResult? quality) {
+  final scored = quality?.imagePath;
+  if (scored != null && scored.isNotEmpty && shotPaths.contains(scored)) {
+    return scored;
+  }
+  return shotPaths.isEmpty ? null : shotPaths.first;
 }

@@ -42,6 +42,7 @@ Future<void> registerAdaptersAndOpenBoxes() async {
   Hive.registerAdapter(UnassignedCaptureRecordAdapter());
   Hive.registerAdapter(CellQualityRecordAdapter());
   Hive.registerAdapter(NeighbourQualityRecordAdapter());
+  Hive.registerAdapter(ShotQualityScoreRecordAdapter());
 
   await Future.wait([
     Hive.openBox<SitePackageRecord>(HiveBoxes.sites),

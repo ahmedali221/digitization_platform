@@ -14,6 +14,7 @@ import '../../../../core/theme/app_spacing.dart';
 import '../../../../core/utils/navigation_extensions.dart';
 import '../../../../core/widgets/feedback_states.dart';
 import '../../data/datasources/grid_capture_local_data_source.dart';
+import '../../domain/entities/capture_quality.dart';
 import '../../domain/repositories/grid_capture_repository.dart';
 import '../cubit/capture_session_cubit.dart';
 import '../cubit/capture_session_state.dart';
@@ -119,6 +120,12 @@ class _CameraBodyState extends State<_CameraBody> {
   double _baseZoom = 1;
   double? _pendingZoom;
   bool _applyingZoom = false;
+
+  // When on, a successful capture automatically opens the next cell instead
+  // of leaving the operator on the current one — see `_advanceToNextCell`.
+  // Toggled by tapping the skip-next button rather than that button directly
+  // advancing the cell.
+  bool _autoAdvance = false;
 
   // Guards against overlapping camera-controller operations — e.g. tapping
   // a zoom preset mid-capture, or firing the shutter mid-lens-switch — which
@@ -350,6 +357,7 @@ class _CameraBodyState extends State<_CameraBody> {
       final file = await controller.takePicture();
       if (!mounted) return;
       await context.read<CaptureSessionCubit>().takePhoto(file);
+      if (_autoAdvance) _advanceToNextCell();
     } finally {
       if (mounted) setState(() => _capturing = false);
     }
@@ -427,28 +435,34 @@ class _CameraBodyState extends State<_CameraBody> {
   /// review first.
   void _handleSave() {
     context.read<CaptureSessionCubit>().savePartial();
-    // popToPath (not go()) so the floor's wall list is revealed rather than
-    // rebuilt — go() would reset its room filter and any other in-memory
-    // state, and collapse the back stack down to just this page.
-    context.popToPath(
-      '/sites/${widget.siteId}/buildings/${widget.buildingId}/floors/${widget.floorId}',
-    );
+    // A single pop — not popToPath — back to GridCapturePage: this screen is
+    // only ever reached by GridCapturePage's `_openCamera` pushing it, so
+    // its immediate parent in the stack is always the wall's grid overview,
+    // never the floor's wall list. `_openCamera` awaits this very push and
+    // refreshes its own cubit once it resolves, so the grid overview picks
+    // up this save without needing anything further here.
+    context.safePop();
   }
 
-  /// Advances the active cell to the next one in row-major order. A no-op
-  /// past the last cell — there's nothing further to move to — and while a
-  /// shutter capture is still in flight: [CaptureSessionCubit.takePhoto]
-  /// attaches the photo to whichever cell is active at the moment it
-  /// finishes, not whichever was active when the shutter was pressed, so
-  /// switching cells mid-capture would misattribute the photo to the newly
-  /// active one instead (the cell strip's own taps are already disabled
-  /// during capture for the same reason — see `CameraGridNavigator`'s
-  /// `enabled: !_capturing` below).
-  void _handleNextCell(int activeCellId, int cellCount) {
-    if (_capturing) return;
+  /// Advances the active cell to the next one in row-major order, once a
+  /// capture has just landed on the current cell. Reads the cubit's own
+  /// state rather than a value captured at build time, since it runs after
+  /// `takePhoto`'s `await` — by then a newer state may already be current.
+  /// A no-op past the last cell — there's nothing further to move to.
+  void _advanceToNextCell() {
+    final cubit = context.read<CaptureSessionCubit>();
+    final current = cubit.state;
+    if (current is! CaptureSessionLoaded || current.grid == null) return;
+    final activeCellId = current.activeCellId ?? 0;
     final nextCellId = activeCellId + 1;
-    if (nextCellId >= cellCount) return;
-    context.read<CaptureSessionCubit>().openCell(nextCellId);
+    if (nextCellId >= current.grid!.cells.length) return;
+    cubit.openCell(nextCellId);
+  }
+
+  /// Toggles auto-advance mode: when on, a successful capture automatically
+  /// opens the next cell instead of leaving the operator to switch manually.
+  void _toggleAutoAdvance() {
+    setState(() => _autoAdvance = !_autoAdvance);
   }
 
   @override
@@ -475,7 +489,6 @@ class _CameraBodyState extends State<_CameraBody> {
     final col = activeCellId % grid.cols + 1;
     final cellLabel = 'R${row}C$col';
     final shotPaths = grid.cells[activeCellId].shotPaths;
-    final hasNextCell = activeCellId + 1 < grid.cells.length;
 
     return Column(
       children: [
@@ -516,13 +529,9 @@ class _CameraBodyState extends State<_CameraBody> {
                   children: [
                     _SaveButton(onTap: _capturing ? null : _handleSave),
                     const SizedBox(height: AppSpacing.sm),
-                    _RoundIconButton(
-                      icon: Icons.skip_next,
-                      iconColor: hasNextCell && !_capturing
-                          ? Colors.white
-                          : Colors.white38,
-                      onTap: () =>
-                          _handleNextCell(activeCellId, grid.cells.length),
+                    _AutoAdvanceToggleButton(
+                      enabled: _autoAdvance,
+                      onTap: _toggleAutoAdvance,
                     ),
                   ],
                 ),
@@ -564,6 +573,7 @@ class _CameraBodyState extends State<_CameraBody> {
         ),
         _CaptureFooter(
           shotPaths: shotPaths,
+          quality: widget.state.cellQuality[activeCellId],
           deletingPaths: _deletingPaths,
           onDelete: (path) => _handleDeletePhoto(activeCellId, path),
           onShutter:
@@ -830,6 +840,49 @@ class _RoundIconButton extends StatelessWidget {
   }
 }
 
+/// Toggles auto-advance mode: when [enabled], a successful capture
+/// automatically opens the next grid cell instead of leaving the operator
+/// on the current one. Styled like [_RoundIconButton] but with a filled
+/// accent background while enabled, so the mode's state stays visible
+/// without needing to check a settings screen.
+class _AutoAdvanceToggleButton extends StatelessWidget {
+  const _AutoAdvanceToggleButton({required this.enabled, required this.onTap});
+
+  final bool enabled;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return Semantics(
+      toggled: enabled,
+      label: 'Auto-advance to next cell',
+      child: SizedBox(
+        width: 48,
+        height: 48,
+        child: Material(
+          color: Colors.transparent,
+          shape: const CircleBorder(),
+          child: InkWell(
+            onTap: onTap,
+            customBorder: const CircleBorder(),
+            child: Center(
+              child: Container(
+                width: 36,
+                height: 36,
+                decoration: BoxDecoration(
+                  color: enabled ? AppColors.seed : AppColors.cameraScrim,
+                  shape: BoxShape.circle,
+                ),
+                child: const Icon(Icons.skip_next, size: 20, color: Colors.white),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
 /// Persists whatever's been captured so far to the wall's grid, right from
 /// the camera screen — the same action as coverage-review's "Save partial",
 /// just reachable without leaving the capture flow first.
@@ -879,11 +932,16 @@ class _SaveButton extends StatelessWidget {
 class _ThumbnailStrip extends StatelessWidget {
   const _ThumbnailStrip({
     required this.shotPaths,
+    required this.quality,
     required this.deletingPaths,
     required this.onDelete,
   });
 
   final List<String> shotPaths;
+
+  /// This cell's quality result, if scored — carries every shot's own score
+  /// via [CellQualityResult.scoreFor], not just the winning shot's.
+  final CellQualityResult? quality;
   final Set<String> deletingPaths;
   final ValueChanged<String> onDelete;
 
@@ -900,6 +958,7 @@ class _ThumbnailStrip extends StatelessWidget {
           final path = shotPaths[index];
           return _ThumbnailTile(
             path: path,
+            score: quality?.scoreFor(path),
             deleting: deletingPaths.contains(path),
             onDelete: () => onDelete(path),
           );
@@ -915,12 +974,14 @@ class _ThumbnailStrip extends StatelessWidget {
 class _CaptureFooter extends StatelessWidget {
   const _CaptureFooter({
     required this.shotPaths,
+    required this.quality,
     required this.deletingPaths,
     required this.onDelete,
     required this.onShutter,
   });
 
   final List<String> shotPaths;
+  final CellQualityResult? quality;
   final Set<String> deletingPaths;
   final ValueChanged<String> onDelete;
   final VoidCallback? onShutter;
@@ -949,6 +1010,7 @@ class _CaptureFooter extends StatelessWidget {
                 width: sideWidth,
                 child: _ThumbnailStrip(
                   shotPaths: shotPaths,
+                  quality: quality,
                   deletingPaths: deletingPaths,
                   onDelete: onDelete,
                 ),
@@ -968,11 +1030,17 @@ class _CaptureFooter extends StatelessWidget {
 class _ThumbnailTile extends StatelessWidget {
   const _ThumbnailTile({
     required this.path,
+    required this.score,
     required this.deleting,
     required this.onDelete,
   });
 
   final String path;
+
+  /// This specific shot's own score — a cell can hold several retakes, each
+  /// scored independently, so this must never be the cell's overall/winning
+  /// score unless [path] happens to be the winning shot.
+  final ShotQualityScore? score;
   final bool deleting;
   final VoidCallback onDelete;
 
@@ -990,7 +1058,7 @@ class _ThumbnailTile extends StatelessWidget {
         children: [
           Positioned.fill(
             child: InkWell(
-              onTap: () => ImagePreviewDialog.show(context, path),
+              onTap: () => ImagePreviewDialog.show(context, path, score: score),
               child: Image.file(
                 File(path),
                 fit: BoxFit.cover,
@@ -1004,6 +1072,12 @@ class _ThumbnailTile extends StatelessWidget {
               ),
             ),
           ),
+          if (score != null)
+            Positioned(
+              bottom: 2,
+              left: 2,
+              child: IgnorePointer(child: QualityDot(tier: score!.tier, size: 10)),
+            ),
           Positioned(
             top: 0,
             right: 0,
