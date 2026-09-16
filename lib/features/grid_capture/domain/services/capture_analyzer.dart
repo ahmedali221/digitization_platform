@@ -297,11 +297,18 @@ ImageQualityMetrics _scoreImage(
   final sharpnessScore = _normalized01(features.sharpness, config.sharpnessFullScore) * 100;
   final contrastScore = _normalized01(features.contrast, config.contrastFullScore) * 100;
 
-  final imageScore = config.weightKeypointDensity * keypointDensityScore +
-      config.weightSpatialDistribution * spatialDistributionScore +
-      config.weightRelevantEdgeDensity * relevantEdgeDensityScore +
-      config.weightSharpness * sharpnessScore +
-      config.weightContrast * contrastScore;
+  // Blank-frame gate: below this contrast, treat the frame as having no
+  // real content and don't let keypoint/spatial terms (which noise on a
+  // near-flat frame can still trigger) rescue the score — see
+  // CaptureQualityConfig.blankContrastFloor.
+  final isBlank = features.contrast < config.blankContrastFloor;
+  final imageScore = isBlank
+      ? 0.0
+      : config.weightKeypointDensity * keypointDensityScore +
+            config.weightSpatialDistribution * spatialDistributionScore +
+            config.weightRelevantEdgeDensity * relevantEdgeDensityScore +
+            config.weightSharpness * sharpnessScore +
+            config.weightContrast * contrastScore;
 
   return ImageQualityMetrics(
     keypointCount: keypointCount,
@@ -540,6 +547,9 @@ String? pickFailureReason(
   CaptureQualityConfig config,
 ) {
   if (tier != QualityTier.red && tier != QualityTier.orange) return null;
+
+  const blank = 'Image looks blank or far too dark — check the lens/lighting and retake.';
+  if (image.contrast < config.blankContrastFloor) return blank;
 
   const blurry = 'Image is too blurry — hold the phone steady and retake.';
   const weakEdge = "Not enough detail near the edge that needs to connect — move closer or reframe.";

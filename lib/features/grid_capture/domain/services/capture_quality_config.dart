@@ -43,6 +43,19 @@ class CaptureQualityConfig {
     this.sharpnessFullScore = 500, // Laplacian variance
     this.contrastFullScore = 60, // grayscale std dev, 0-255
 
+    // -- Tier 1: blank-frame gate. Below this contrast, the frame is
+    // treated as having no real content regardless of what SIFT found —
+    // sensor noise/compression artifacts on a near-flat frame (e.g. lens
+    // covered, black screen) can still clear SIFT's own per-keypoint
+    // contrast threshold and produce keypoints scattered widely enough to
+    // inflate keypointDensityScore/spatialDistributionScore (55% combined
+    // weight) even though the frame is useless. This floor exists
+    // separately from contrastFullScore (the anchor contrast *saturates*
+    // at) so a genuinely low-contrast-but-sharp real capture (e.g. a flat
+    // painted wall section) isn't penalized — only frames below this floor
+    // are assumed blank.
+    this.blankContrastFloor = 8.0,
+
     // -- Tier 1 weights (spec §3, sum to 1.0) --
     this.weightKeypointDensity = 0.35,
     this.weightSpatialDistribution = 0.20,
@@ -97,6 +110,7 @@ class CaptureQualityConfig {
   final double edgeDensityFullScore;
   final double sharpnessFullScore;
   final double contrastFullScore;
+  final double blankContrastFloor;
 
   final double weightKeypointDensity;
   final double weightSpatialDistribution;
