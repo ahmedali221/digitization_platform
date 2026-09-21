@@ -13,9 +13,11 @@ import '../../../../core/theme/app_colors.dart';
 import '../../../../core/theme/app_spacing.dart';
 import '../../../../core/utils/navigation_extensions.dart';
 import '../../../../core/widgets/feedback_states.dart';
+import '../../data/datasources/camera_preferences_local_data_source.dart';
 import '../../data/datasources/grid_capture_local_data_source.dart';
 import '../../domain/entities/capture_quality.dart';
 import '../../domain/repositories/grid_capture_repository.dart';
+import '../../domain/services/capture_analyzer_isolate.dart';
 import '../cubit/capture_session_cubit.dart';
 import '../cubit/capture_session_state.dart';
 import '../widgets/camera_grid_navigator.dart';
@@ -50,6 +52,7 @@ class CameraCapturePage extends StatelessWidget {
           CaptureSessionCubit(
               GetIt.instance<GridCaptureRepository>(),
               GetIt.instance<GridCaptureLocalDataSource>(),
+              GetIt.instance<CaptureAnalyzerIsolate>(),
             )
             ..init(floorId, wallId)
             ..openCell(initialCell),
@@ -107,7 +110,7 @@ class _CameraBody extends StatefulWidget {
 
 enum _CameraLoadState { loading, ready, error }
 
-class _CameraBodyState extends State<_CameraBody> {
+class _CameraBodyState extends State<_CameraBody> with WidgetsBindingObserver {
   CameraController? _controller;
   _CameraLoadState _loadState = _CameraLoadState.loading;
   String? _errorMessage;
@@ -124,8 +127,24 @@ class _CameraBodyState extends State<_CameraBody> {
   // When on, a successful capture automatically opens the next cell instead
   // of leaving the operator on the current one — see `_advanceToNextCell`.
   // Toggled by tapping the skip-next button rather than that button directly
-  // advancing the cell.
+  // advancing the cell. Seeded from [_preferences] in `initState` and
+  // persisted on every toggle, so it carries forward to the next wall/room
+  // instead of resetting — a fresh camera screen (and cubit) is created
+  // every time the operator opens a different one.
   bool _autoAdvance = false;
+
+  // The `camera` plugin defaults every controller to FlashMode.auto, which
+  // fires (or doesn't) per-shot based on the plugin's own ambient-light
+  // metering — inconsistent lighting between grid cells hurts the
+  // neighbour-matching quality score, and reads as "the flash turns on by
+  // itself" to the operator. Defaulting to off makes capture predictable;
+  // the button cycles off -> auto -> torch (steady on) for whoever wants it.
+  // Like [_autoAdvance], seeded from and persisted to [_preferences].
+  FlashMode _flashMode = FlashMode.off;
+  static const _flashModeCycle = [FlashMode.off, FlashMode.auto, FlashMode.torch];
+
+  final CameraPreferencesLocalDataSource _preferences =
+      GetIt.instance<CameraPreferencesLocalDataSource>();
 
   // Guards against overlapping camera-controller operations — e.g. tapping
   // a zoom preset mid-capture, or firing the shutter mid-lens-switch — which
@@ -177,8 +196,69 @@ class _CameraBodyState extends State<_CameraBody> {
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
+    _loadPreferences();
     _initializeCamera();
     CaptureButtonChannel.listen(_handleShutter);
+  }
+
+  /// Releases the camera sensor the instant the app stops being the
+  /// foreground app (`inactive`, not the later `paused`, matching the
+  /// `camera` plugin's own reference example — `inactive` fires immediately
+  /// on both platforms, `paused` can lag behind it), and re-acquires it on
+  /// `resumed`. Without this, backgrounding mid-capture (a call, the home
+  /// button, switching apps) leaves the sensor and preview pipeline running
+  /// for as long as the operator is away — a battery drain with nothing to
+  /// show for it, since nothing is on screen to look at the preview. Always
+  /// re-acquires the primary lens on resume rather than remembering an
+  /// active ultra-wide switch — simpler and reuses the exact same
+  /// (well-tested) startup path instead of a second controller-creation
+  /// route, at the cost of the operator having to re-select ultra-wide if
+  /// they were on it before backgrounding.
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.inactive) {
+      unawaited(_releaseCameraForBackground());
+    } else if (state == AppLifecycleState.resumed) {
+      if (_controller != null || _loadState != _CameraLoadState.loading) return;
+      _initializeCamera();
+    }
+  }
+
+  /// Disposes [_controller] once any native call already in flight
+  /// (capturing, zooming, switching lens) has settled — never mid-call.
+  /// Racing a `dispose()` against an in-flight native call on the same
+  /// controller is exactly what crashed AVFoundation before (see
+  /// `_disposed`'s doc comment); backgrounding is common enough mid-capture
+  /// (an incoming call, the home button) that this can't skip the same wait
+  /// `_handleShutter`/`_switchLens` already do.
+  Future<void> _releaseCameraForBackground() async {
+    if (_controller == null) return;
+    while (_capturing || _switchingLens || _applyingZoom) {
+      await Future.delayed(const Duration(milliseconds: 10));
+    }
+    if (_disposed) return;
+    // Re-read rather than reuse a reference captured before the wait — a
+    // lens switch may have replaced _controller with a different instance
+    // while this was waiting, and that's the one that now needs disposing.
+    final controller = _controller;
+    if (controller == null) return;
+    _controller = null;
+    if (mounted) setState(() => _loadState = _CameraLoadState.loading);
+    await controller.dispose();
+  }
+
+  /// Reads the operator's last-picked auto-advance/flash choices before the
+  /// camera even starts initializing, so [_initializeCamera]'s own
+  /// [_applyFlashMode] call already applies the remembered mode to the
+  /// very first controller instead of the plugin's default.
+  void _loadPreferences() {
+    _autoAdvance = _preferences.getAutoAdvance();
+    final storedFlashMode = _preferences.getFlashModeName();
+    _flashMode = _flashModeCycle.firstWhere(
+      (mode) => mode.name == storedFlashMode,
+      orElse: () => FlashMode.off,
+    );
   }
 
   Future<void> _initializeCamera() async {
@@ -207,10 +287,15 @@ class _CameraBodyState extends State<_CameraBody> {
       );
       final controller = CameraController(
         primaryCamera,
-        ResolutionPreset.high,
+        // Max, not high — the analyzer's sharpness/keypoint-density scores
+        // are normalized per-megapixel, so a capped preset scores lower
+        // than a native camera app's default (much higher) resolution for
+        // the same physical wall.
+        ResolutionPreset.max,
         enableAudio: false,
       );
       await controller.initialize();
+      await _applyFlashMode(controller);
       final minimumZoom = await controller.getMinZoomLevel();
       final maximumZoom = await controller.getMaxZoomLevel();
       final initialZoom = 1.0.clamp(minimumZoom, maximumZoom).toDouble();
@@ -272,10 +357,11 @@ class _CameraBodyState extends State<_CameraBody> {
     try {
       final newController = CameraController(
         description,
-        ResolutionPreset.high,
+        ResolutionPreset.max,
         enableAudio: false,
       );
       await newController.initialize();
+      await _applyFlashMode(newController);
       final minimumZoom = await newController.getMinZoomLevel();
       final maximumZoom = await newController.getMaxZoomLevel();
       await newController.setZoomLevel(minimumZoom);
@@ -414,6 +500,8 @@ class _CameraBodyState extends State<_CameraBody> {
 
   Future<void> _handleDeletePhoto(int cellId, String path) async {
     if (_capturing || _switchingLens || _deletingPaths.contains(path)) return;
+    final confirmed = await _confirmDeletePhoto();
+    if (!mounted || confirmed != true) return;
     setState(() => _deletingPaths.add(path));
     try {
       await context.read<CaptureSessionCubit>().deletePhoto(cellId, path);
@@ -426,6 +514,29 @@ class _CameraBodyState extends State<_CameraBody> {
     } finally {
       if (mounted) setState(() => _deletingPaths.remove(path));
     }
+  }
+
+  Future<bool?> _confirmDeletePhoto() {
+    return showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Delete photo?'),
+        content: const Text('This shot will be removed from the cell.'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(false),
+            child: const Text('Cancel'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(true),
+            child: Text(
+              'Delete',
+              style: TextStyle(color: AppColors.onDangerContainer),
+            ),
+          ),
+        ],
+      ),
+    );
   }
 
   /// Saves whatever's been captured so far straight to the wall's grid —
@@ -461,8 +572,56 @@ class _CameraBodyState extends State<_CameraBody> {
 
   /// Toggles auto-advance mode: when on, a successful capture automatically
   /// opens the next cell instead of leaving the operator to switch manually.
+  /// Persisted immediately so the next wall/room opens with the same choice.
   void _toggleAutoAdvance() {
     setState(() => _autoAdvance = !_autoAdvance);
+    unawaited(_preferences.setAutoAdvance(_autoAdvance));
+  }
+
+  /// Applies [_flashMode] to a just-initialized controller — both the
+  /// startup controller and every lens-switch controller default to the
+  /// plugin's own FlashMode.auto, so this has to run after every
+  /// `initialize()` to keep the operator's choice in effect across a lens
+  /// switch. Some devices (or the front camera, unreachable here but not
+  /// worth assuming away) throw when asked for a flash mode they don't
+  /// support — swallowed rather than surfaced, since falling back to
+  /// whatever the plugin already applied is harmless.
+  Future<void> _applyFlashMode(CameraController controller) async {
+    try {
+      await controller.setFlashMode(_flashMode);
+    } on CameraException catch (error) {
+      debugPrint(
+        'CameraCapturePage: setFlashMode(${_flashMode.name}) failed: '
+        '${error.description ?? error.code}',
+      );
+    }
+  }
+
+  /// Cycles off -> auto -> torch (steady on) -> off. Torch (rather than
+  /// FlashMode.always) is offered as the "on" option so lighting stays
+  /// identical across every shot in the grid — an operator who wants
+  /// consistent illumination for neighbour-matching shouldn't have to
+  /// depend on the plugin's per-shot auto-exposure decision.
+  Future<void> _cycleFlash() async {
+    final controller = _controller;
+    if (controller == null || _capturing || _switchingLens) return;
+    final next =
+        _flashModeCycle[(_flashModeCycle.indexOf(_flashMode) + 1) % _flashModeCycle.length];
+    try {
+      await controller.setFlashMode(next);
+      if (mounted) setState(() => _flashMode = next);
+      unawaited(_preferences.setFlashModeName(next.name));
+    } on CameraException catch (error) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              'Could not change flash: ${error.description ?? error.code}',
+            ),
+          ),
+        );
+      }
+    }
   }
 
   @override
@@ -471,6 +630,7 @@ class _CameraBodyState extends State<_CameraBody> {
     // `await` sees it before this method disposes the controller out from
     // under it — see `_disposed`'s doc comment.
     _disposed = true;
+    WidgetsBinding.instance.removeObserver(this);
     CaptureButtonChannel.stop();
     _controller?.dispose();
     super.dispose();
@@ -528,6 +688,8 @@ class _CameraBodyState extends State<_CameraBody> {
                   crossAxisAlignment: CrossAxisAlignment.end,
                   children: [
                     _SaveButton(onTap: _capturing ? null : _handleSave),
+                    const SizedBox(height: AppSpacing.sm),
+                    _FlashModeButton(mode: _flashMode, onTap: _cycleFlash),
                     const SizedBox(height: AppSpacing.sm),
                     _AutoAdvanceToggleButton(
                       enabled: _autoAdvance,
@@ -840,6 +1002,61 @@ class _RoundIconButton extends StatelessWidget {
   }
 }
 
+/// Cycles the controller's flash mode (off -> auto -> torch). Styled like
+/// [_AutoAdvanceToggleButton] — filled accent background whenever the mode
+/// isn't off, so the operator can tell at a glance the flash won't behave
+/// unpredictably shot-to-shot.
+class _FlashModeButton extends StatelessWidget {
+  const _FlashModeButton({required this.mode, required this.onTap});
+
+  final FlashMode mode;
+  final VoidCallback onTap;
+
+  IconData get _icon => switch (mode) {
+    FlashMode.off => Icons.flash_off,
+    FlashMode.auto => Icons.flash_auto,
+    FlashMode.torch || FlashMode.always => Icons.flash_on,
+  };
+
+  String get _label => switch (mode) {
+    FlashMode.off => 'Flash off',
+    FlashMode.auto => 'Flash automatic',
+    FlashMode.torch || FlashMode.always => 'Flash on',
+  };
+
+  @override
+  Widget build(BuildContext context) {
+    final enabled = mode != FlashMode.off;
+    return Semantics(
+      toggled: enabled,
+      label: _label,
+      child: SizedBox(
+        width: 48,
+        height: 48,
+        child: Material(
+          color: Colors.transparent,
+          shape: const CircleBorder(),
+          child: InkWell(
+            onTap: onTap,
+            customBorder: const CircleBorder(),
+            child: Center(
+              child: Container(
+                width: 36,
+                height: 36,
+                decoration: BoxDecoration(
+                  color: enabled ? AppColors.seed : AppColors.cameraScrim,
+                  shape: BoxShape.circle,
+                ),
+                child: Icon(_icon, size: 20, color: Colors.white),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
 /// Toggles auto-advance mode: when [enabled], a successful capture
 /// automatically opens the next grid cell instead of leaving the operator
 /// on the current one. Styled like [_RoundIconButton] but with a filled
@@ -959,6 +1176,7 @@ class _ThumbnailStrip extends StatelessWidget {
           return _ThumbnailTile(
             path: path,
             score: quality?.scoreFor(path),
+            isMain: quality?.imagePath == path,
             deleting: deletingPaths.contains(path),
             onDelete: () => onDelete(path),
           );
@@ -1031,6 +1249,7 @@ class _ThumbnailTile extends StatelessWidget {
   const _ThumbnailTile({
     required this.path,
     required this.score,
+    required this.isMain,
     required this.deleting,
     required this.onDelete,
   });
@@ -1041,6 +1260,11 @@ class _ThumbnailTile extends StatelessWidget {
   /// scored independently, so this must never be the cell's overall/winning
   /// score unless [path] happens to be the winning shot.
   final ShotQualityScore? score;
+
+  /// Whether this is the cell's current highest-scoring shot — the one
+  /// [analyzeCellQuality] picked to drive the heat badge, stitching, and
+  /// wall preview.
+  final bool isMain;
   final bool deleting;
   final VoidCallback onDelete;
 
@@ -1058,7 +1282,7 @@ class _ThumbnailTile extends StatelessWidget {
         children: [
           Positioned.fill(
             child: InkWell(
-              onTap: () => ImagePreviewDialog.show(context, path, score: score),
+              onTap: () => ImagePreviewDialog.show(context, path, score: score, isMain: isMain),
               child: Image.file(
                 File(path),
                 fit: BoxFit.cover,
@@ -1077,6 +1301,28 @@ class _ThumbnailTile extends StatelessWidget {
               bottom: 2,
               left: 2,
               child: IgnorePointer(child: QualityDot(tier: score!.tier, size: 10)),
+            ),
+          if (isMain)
+            Positioned(
+              top: 2,
+              left: 2,
+              child: IgnorePointer(
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 1),
+                  decoration: BoxDecoration(
+                    color: AppColors.cameraScrim,
+                    borderRadius: BorderRadius.circular(4),
+                  ),
+                  child: const Text(
+                    'Main',
+                    style: TextStyle(
+                      color: Colors.white,
+                      fontSize: 8,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                ),
+              ),
             ),
           Positioned(
             top: 0,

@@ -277,6 +277,13 @@ class _CameraGridCell extends StatelessWidget {
                   Image.file(
                     File(thumbnailPath),
                     fit: BoxFit.cover,
+                    // Same reasoning as GridCellTile: decode at the strip's
+                    // actual _cellWidth instead of the full capture
+                    // resolution, since BoxFit.cover would discard the rest
+                    // anyway.
+                    cacheWidth: (_CameraGridNavigatorState._cellWidth *
+                            MediaQuery.devicePixelRatioOf(context))
+                        .round(),
                     errorBuilder: (context, error, stackTrace) =>
                         const SizedBox.shrink(),
                   ),

@@ -25,6 +25,7 @@ class HiveBoxes {
   static const String idMappings = 'id_mappings';
   static const String device = 'device';
   static const String unassignedCaptures = 'unassigned_captures';
+  static const String settings = 'settings';
 }
 
 /// Registers every `@HiveType` adapter and opens every box. Called once at
@@ -55,5 +56,6 @@ Future<void> registerAdaptersAndOpenBoxes() async {
     Hive.openBox<IdMappingRecord>(HiveBoxes.idMappings),
     Hive.openBox(HiveBoxes.device),
     Hive.openBox<UnassignedCaptureRecord>(HiveBoxes.unassignedCaptures),
+    Hive.openBox(HiveBoxes.settings),
   ]);
 }

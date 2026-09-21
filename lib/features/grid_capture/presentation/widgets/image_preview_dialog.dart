@@ -15,20 +15,30 @@ import 'quality_badge.dart';
 /// each one scores independently (see `CellQualityResult.allShotScores`),
 /// so this must never default to the cell's overall/winning score.
 class ImagePreviewDialog extends StatelessWidget {
-  const ImagePreviewDialog({super.key, required this.path, this.score});
+  const ImagePreviewDialog({
+    super.key,
+    required this.path,
+    this.score,
+    this.isMain = false,
+  });
 
   final String path;
   final ShotQualityScore? score;
+
+  /// Whether [path] is the cell's current highest-scoring shot — mirrors the
+  /// "Main" pill shown on its thumbnail in the capture footer.
+  final bool isMain;
 
   static Future<void> show(
     BuildContext context,
     String path, {
     ShotQualityScore? score,
+    bool isMain = false,
   }) {
     return showDialog<void>(
       context: context,
       barrierColor: Colors.black,
-      builder: (_) => ImagePreviewDialog(path: path, score: score),
+      builder: (_) => ImagePreviewDialog(path: path, score: score, isMain: isMain),
     );
   }
 
@@ -55,11 +65,20 @@ class ImagePreviewDialog extends StatelessWidget {
               ),
             ),
           ),
-          if (score != null)
+          if (score != null || isMain)
             Positioned(
               top: AppSpacing.md,
               left: AppSpacing.md,
-              child: SafeArea(child: _ShotScoreBadge(score: score!)),
+              child: SafeArea(
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    if (score != null) _ShotScoreBadge(score: score!),
+                    if (score != null && isMain) const SizedBox(width: AppSpacing.xs),
+                    if (isMain) const _MainBadge(),
+                  ],
+                ),
+              ),
             ),
           Positioned(
             top: AppSpacing.md,
@@ -81,6 +100,27 @@ class ImagePreviewDialog extends StatelessWidget {
             ),
           ),
         ],
+      ),
+    );
+  }
+}
+
+/// Mirrors the "Main" pill shown on this shot's thumbnail in the capture
+/// footer — same word, same visual language, wherever the shot is shown.
+class _MainBadge extends StatelessWidget {
+  const _MainBadge();
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: AppSpacing.sm, vertical: AppSpacing.xs),
+      decoration: BoxDecoration(
+        color: AppColors.cameraScrim,
+        borderRadius: BorderRadius.circular(999),
+      ),
+      child: const Text(
+        'Main',
+        style: TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.w700),
       ),
     );
   }

@@ -14,6 +14,7 @@ import '../../../../core/widgets/primary_action_button.dart';
 import '../../data/datasources/grid_capture_local_data_source.dart';
 import '../../domain/entities/capture_quality.dart';
 import '../../domain/repositories/grid_capture_repository.dart';
+import '../../domain/services/capture_analyzer_isolate.dart';
 import '../../domain/services/capture_quality_config.dart';
 import '../../domain/services/grid_preview_composer.dart';
 import '../cubit/capture_session_cubit.dart';
@@ -44,6 +45,7 @@ class CoverageReviewPage extends StatelessWidget {
       create: (_) => CaptureSessionCubit(
         GetIt.instance<GridCaptureRepository>(),
         GetIt.instance<GridCaptureLocalDataSource>(),
+        GetIt.instance<CaptureAnalyzerIsolate>(),
       )..init(floorId, wallId),
       child: Scaffold(
         body: SafeArea(

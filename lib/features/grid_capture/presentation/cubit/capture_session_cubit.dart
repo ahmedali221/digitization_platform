@@ -1,7 +1,9 @@
 import 'dart:async';
+import 'dart:io';
 
 import 'package:camera/camera.dart';
 import 'package:flutter/foundation.dart';
+import 'package:flutter/painting.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 
 import '../../../../core/domain/entities/wall.dart';
@@ -9,6 +11,7 @@ import '../../data/datasources/grid_capture_local_data_source.dart';
 import '../../domain/entities/capture_quality.dart';
 import '../../domain/repositories/grid_capture_repository.dart';
 import '../../domain/services/capture_analyzer.dart';
+import '../../domain/services/capture_analyzer_isolate.dart';
 import 'capture_session_state.dart';
 
 /// Fixed rows x cols choices offered on the grid-init screen, in addition to
@@ -33,11 +36,15 @@ const _maxGridCells = 400;
 /// wall/grid data, so a freshly-created instance always picks up whatever
 /// the previous screen just wrote.
 class CaptureSessionCubit extends Cubit<CaptureSessionState> {
-  CaptureSessionCubit(this._repository, this._localDataSource)
-    : super(const CaptureSessionLoading());
+  CaptureSessionCubit(
+    this._repository,
+    this._localDataSource,
+    this._captureAnalyzerIsolate,
+  ) : super(const CaptureSessionLoading());
 
   final GridCaptureRepository _repository;
   final GridCaptureLocalDataSource _localDataSource;
+  final CaptureAnalyzerIsolate _captureAnalyzerIsolate;
   String _floorId = '';
   String _wallId = '';
   StreamSubscription<WallEntity?>? _subscription;
@@ -202,6 +209,11 @@ class CaptureSessionCubit extends Cubit<CaptureSessionState> {
       cellId,
       filePath,
     );
+    // A retake can land back on this exact path (_nextShotNumber reuses the
+    // deleted shot's number once it's gone) — evict it so Image.file, which
+    // caches decoded bytes by path only, can't keep showing the file this
+    // path used to point to.
+    imageCache.evict(FileImage(File(filePath)));
     if (updatedWall != null) {
       _onWallChanged(updatedWall);
       // The remaining "first" shot (if any) may be a different file than
@@ -216,8 +228,9 @@ class CaptureSessionCubit extends Cubit<CaptureSessionState> {
   /// Runs Tier 1 (always) and Tier 2/3 (for every grid-adjacent cell that
   /// already has a photo) for [cellIndex]'s shots — every one taken for that
   /// cell, not just the first, so a strong retake wins over a weak initial
-  /// attempt — off the main isolate. A no-op if the cell has no photo, or an
-  /// analysis for it is already in flight.
+  /// attempt — on [_captureAnalyzerIsolate]'s dedicated worker isolate, never
+  /// the main isolate. A no-op if the cell has no photo, or an analysis for
+  /// it is already in flight.
   Future<void> _analyzeCellQuality(int cellIndex) async {
     final started = state;
     if (started is! CaptureSessionLoaded) return;
@@ -226,7 +239,24 @@ class CaptureSessionCubit extends Cubit<CaptureSessionState> {
     if (started.analyzingCellIds.contains(cellIndex)) return;
 
     final shotPaths = grid.cells[cellIndex].shotPaths;
-    if (shotPaths.isEmpty) return;
+    if (shotPaths.isEmpty) {
+      // The cell's last photo was just deleted — this cubit's in-memory
+      // cellQuality map isn't touched by _onWallChanged (it only carries
+      // `wall` forward), so without this the stale result (and its
+      // imagePath, pointing at a now-deleted file) would keep describing
+      // this cell until a future shot happens to trigger a fresh analysis —
+      // and if that shot's number reuses the deleted best shot's number,
+      // representativeShotPath would match it by path and show the old
+      // score against the new photo.
+      if (started.cellQuality.containsKey(cellIndex)) {
+        emit(
+          started.copyWith(
+            cellQuality: {...started.cellQuality}..remove(cellIndex),
+          ),
+        );
+      }
+      return;
+    }
 
     emit(started.copyWith(analyzingCellIds: {...started.analyzingCellIds, cellIndex}));
 
@@ -252,8 +282,7 @@ class CaptureSessionCubit extends Cubit<CaptureSessionState> {
     ];
 
     try {
-      final result = await compute(
-        analyzeCellQuality,
+      final result = await _captureAnalyzerIsolate.analyze(
         CellQualityRequest(
           cellIndex: cellIndex,
           imagePaths: shotPaths,

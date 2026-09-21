@@ -90,6 +90,12 @@ class GridCellTile extends StatelessWidget {
             Image.file(
               File(thumbnailPath),
               fit: BoxFit.cover,
+              // Shots are captured at ResolutionPreset.max (up to tens of MP)
+              // but this tile is never more than a couple hundred logical
+              // pixels wide — decoding full-resolution just to shrink it for
+              // display burns CPU on every grid rebuild for no visual gain.
+              // cacheWidth makes the decoder itself downsample.
+              cacheWidth: (240 * MediaQuery.devicePixelRatioOf(context)).round(),
               errorBuilder: (context, error, stackTrace) =>
                   const SizedBox.shrink(),
             ),

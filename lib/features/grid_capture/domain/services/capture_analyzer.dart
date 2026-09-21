@@ -521,6 +521,10 @@ double _combineCellScore(
   List<NeighbourMatchMetrics> neighbours,
   CaptureQualityConfig config,
 ) {
+  // A blank/too-dark image can't be rescued by a good neighbour match — the
+  // operator still has to retake it, no matter how well it happens to
+  // geometrically register. See blankContrastFloor.
+  if (image.contrast < config.blankContrastFloor) return 0.0;
   if (neighbours.isEmpty) return image.imageScore;
 
   final neighbourScore = switch (config.neighbourCombineMode) {

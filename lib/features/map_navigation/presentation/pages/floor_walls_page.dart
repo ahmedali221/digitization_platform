@@ -308,12 +308,20 @@ List<_RoomFilter> _roomFilters(
   List<WallEntity> walls,
 ) {
   final geometryRooms = geometry?.rooms ?? const <FloorRoomGeometry>[];
-  final wallIdsByRoomId = {
-    for (final room in geometryRooms) room.id: Set<String>.of(room.wallIds),
-  };
-  final geometryAssignedWallIds = wallIdsByRoomId.values
-      .expand((ids) => ids)
-      .toSet();
+
+  // A wall_id can be listed under more than one room in the downloaded
+  // bundle (e.g. a shared-boundary wall, or a stale reference left behind by
+  // a dashboard wall merge/reshape) — this screen's model assumes exclusive
+  // room membership (`WallEntity` carries a `floorId` but no room id), so
+  // the first room in bundle order to list a given wall claims it and later
+  // rooms drop it, instead of showing the same wall under both filters.
+  final geometryAssignedWallIds = <String>{};
+  final wallIdsByRoomId = <String, Set<String>>{};
+  for (final room in geometryRooms) {
+    final freshIds = room.wallIds.difference(geometryAssignedWallIds);
+    wallIdsByRoomId[room.id] = freshIds;
+    geometryAssignedWallIds.addAll(freshIds);
+  }
 
   // Local walls (`AddWallPage`) carry their own `roomLabel` instead of real
   // geometry membership — fold each into the matching geometry room by
