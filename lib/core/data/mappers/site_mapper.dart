@@ -101,8 +101,13 @@ class SiteMapper {
     final raw = floorRecord.raw;
     final floorJson = (raw['floor'] as Map).cast<String, dynamic>();
     final rooms = (raw['rooms'] as List? ?? const []).cast<Map>();
-    final wallStatusIndex = (raw['wall_status_index'] as Map? ?? const {})
-        .cast<String, dynamic>();
+    // An empty wall_status_index is sometimes serialized as `[]` rather than
+    // `{}` (e.g. a floor whose rooms have no walls yet) — treat anything
+    // that isn't a Map as empty instead of crashing the cast.
+    final rawWallStatusIndex = raw['wall_status_index'];
+    final wallStatusIndex = rawWallStatusIndex is Map
+        ? rawWallStatusIndex.cast<String, dynamic>()
+        : const <String, dynamic>{};
 
     final walls = rooms
         .expand((room) => (room['walls'] as List? ?? const []).cast<Map>())
