@@ -1286,6 +1286,14 @@ class _ThumbnailTile extends StatelessWidget {
               child: Image.file(
                 File(path),
                 fit: BoxFit.cover,
+                // Shots are captured at ResolutionPreset.max (up to tens of
+                // MP) but this tile is only 64 logical pixels wide — without
+                // cacheWidth the decoder produces a full-resolution bitmap
+                // just to shrink it for display, which is exactly the CPU
+                // spike that makes the capture screen stutter right after
+                // every shutter press (see grid_cell_tile.dart for the same
+                // fix applied to the grid overview).
+                cacheWidth: (64 * MediaQuery.devicePixelRatioOf(context)).round(),
                 errorBuilder: (context, error, stackTrace) => const Center(
                   child: Icon(
                     Icons.image,
