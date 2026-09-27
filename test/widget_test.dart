@@ -20,6 +20,8 @@ import 'package:digitization_platform/core/router/app_router.dart';
 import 'package:digitization_platform/features/map_navigation/data/repositories/fake_map_geometry_repository.dart';
 import 'package:digitization_platform/features/map_navigation/domain/repositories/map_geometry_repository.dart';
 import 'package:digitization_platform/features/map_navigation/presentation/widgets/shape_canvas.dart';
+import 'package:digitization_platform/features/sync_queue/data/repositories/fake_sync_queue_repository.dart';
+import 'package:digitization_platform/features/sync_queue/domain/repositories/sync_queue_repository.dart';
 
 void main() {
   testWidgets('site navigation includes buildings before floors and walls', (
@@ -34,6 +36,9 @@ void main() {
     );
     GetIt.instance.registerLazySingleton<MapGeometryRepository>(
       () => const FakeMapGeometryRepository(),
+    );
+    GetIt.instance.registerLazySingleton<SyncQueueRepository>(
+      () => const FakeSyncQueueRepository(),
     );
     isLoggedInNotifier.value = true;
 

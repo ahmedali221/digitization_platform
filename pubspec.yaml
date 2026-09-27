@@ -95,14 +95,6 @@ dependencies:
   archive: ^4.2.0
   share_plus: ^12.0.2
 
-dependency_overrides:
-  # Patched to prefer a virtual multi-camera device for the back lens on iOS
-  # so zoom can reach the ultra-wide (0.5x) lens. See
-  # third_party/camera_avfoundation/ios/.../CameraPlugin.m for the diff
-  # against upstream camera_avfoundation 0.9.17+3.
-  camera_avfoundation:
-    path: third_party/camera_avfoundation
-
 dev_dependencies:
   flutter_test:
     sdk: flutter
