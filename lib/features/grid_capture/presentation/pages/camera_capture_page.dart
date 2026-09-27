@@ -17,7 +17,6 @@ import '../../data/datasources/camera_preferences_local_data_source.dart';
 import '../../data/datasources/grid_capture_local_data_source.dart';
 import '../../domain/entities/capture_quality.dart';
 import '../../domain/repositories/grid_capture_repository.dart';
-import '../../domain/services/capture_analyzer_isolate.dart';
 import '../cubit/capture_session_cubit.dart';
 import '../cubit/capture_session_state.dart';
 import '../widgets/camera_grid_navigator.dart';
@@ -52,7 +51,6 @@ class CameraCapturePage extends StatelessWidget {
           CaptureSessionCubit(
               GetIt.instance<GridCaptureRepository>(),
               GetIt.instance<GridCaptureLocalDataSource>(),
-              GetIt.instance<CaptureAnalyzerIsolate>(),
             )
             ..init(floorId, wallId)
             ..openCell(initialCell),

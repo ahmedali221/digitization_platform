@@ -65,13 +65,20 @@ class GridCaptureRepositoryImpl implements GridCaptureRepository {
     final session = _sessionLocal.get(wall.id);
     if (session == null) return wall;
 
+    // Indexed once, up front — a firstWhere scan per cell here would be
+    // O(cells^2) (this runs on every watchWall emission, which fires
+    // several times per shot via capture + quality analysis + neighbour
+    // rescore), noticeable once a grid climbs past ~100-200 cells.
+    final byPosition = {
+      for (final c in session.cells) c.row * session.gridCols + c.col: c,
+    };
     final cells = List.generate(session.gridRows * session.gridCols, (i) {
-      final row = i ~/ session.gridCols;
-      final col = i % session.gridCols;
-      final cell = session.cells.firstWhere(
-        (c) => c.row == row && c.col == col,
-        orElse: () => CaptureCellRecord(row: row, col: col, photos: []),
-      );
+      final cell = byPosition[i] ??
+          CaptureCellRecord(
+            row: i ~/ session.gridCols,
+            col: i % session.gridCols,
+            photos: [],
+          );
       return GridCell(shotPaths: cell.photos.map((p) => p.file).toList());
     });
 
@@ -384,21 +391,30 @@ class GridCaptureRepositoryImpl implements GridCaptureRepository {
   }
 
   @override
-  void recordCellQuality(
+  bool getCellQualityOverridden(String floorId, String wallId, int cellIndex) {
+    final session = _sessionLocal.get(wallId);
+    if (session == null) return false;
+    if (cellIndex < 0 || cellIndex >= session.cells.length) return false;
+    return session.cells[cellIndex].qualityOverridden;
+  }
+
+  @override
+  void recordCellQualityBatch(
     String floorId,
     String wallId,
-    int cellIndex,
-    CellQualityResult result,
+    Map<int, CellQualityResult> results,
   ) {
+    if (results.isEmpty) return;
     final session = _sessionLocal.get(wallId);
     if (session == null) return;
 
-    final row = cellIndex ~/ session.gridCols;
-    final col = cellIndex % session.gridCols;
-    final record = CellQualityMapper.toRecord(result);
-    session.cells = session.cells
-        .map((c) => c.row == row && c.col == col ? c.withQuality(record) : c)
-        .toList();
+    for (final entry in results.entries) {
+      final cellIndex = entry.key;
+      if (cellIndex < 0 || cellIndex >= session.cells.length) continue;
+      session.cells[cellIndex] = session.cells[cellIndex].withQuality(
+        CellQualityMapper.toRecord(entry.value),
+      );
+    }
     _sessionLocal.put(session);
   }
 
@@ -411,12 +427,9 @@ class GridCaptureRepositoryImpl implements GridCaptureRepository {
   ) {
     final session = _sessionLocal.get(wallId);
     if (session == null) return;
+    if (cellIndex < 0 || cellIndex >= session.cells.length) return;
 
-    final row = cellIndex ~/ session.gridCols;
-    final col = cellIndex % session.gridCols;
-    session.cells = session.cells
-        .map((c) => c.row == row && c.col == col ? c.withQualityOverride(overridden) : c)
-        .toList();
+    session.cells[cellIndex] = session.cells[cellIndex].withQualityOverride(overridden);
     _sessionLocal.put(session);
   }
 

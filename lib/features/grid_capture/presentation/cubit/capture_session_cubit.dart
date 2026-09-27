@@ -11,7 +11,6 @@ import '../../data/datasources/grid_capture_local_data_source.dart';
 import '../../domain/entities/capture_quality.dart';
 import '../../domain/repositories/grid_capture_repository.dart';
 import '../../domain/services/capture_analyzer.dart';
-import '../../domain/services/capture_analyzer_isolate.dart';
 import 'capture_session_state.dart';
 
 /// Fixed rows x cols choices offered on the grid-init screen, in addition to
@@ -39,12 +38,10 @@ class CaptureSessionCubit extends Cubit<CaptureSessionState> {
   CaptureSessionCubit(
     this._repository,
     this._localDataSource,
-    this._captureAnalyzerIsolate,
   ) : super(const CaptureSessionLoading());
 
   final GridCaptureRepository _repository;
   final GridCaptureLocalDataSource _localDataSource;
-  final CaptureAnalyzerIsolate _captureAnalyzerIsolate;
   String _floorId = '';
   String _wallId = '';
   StreamSubscription<WallEntity?>? _subscription;
@@ -225,18 +222,66 @@ class CaptureSessionCubit extends Cubit<CaptureSessionState> {
     }
   }
 
-  /// Runs Tier 1 (always) and Tier 2/3 (for every grid-adjacent cell that
-  /// already has a photo) for [cellIndex]'s shots — every one taken for that
-  /// cell, not just the first, so a strong retake wins over a weak initial
-  /// attempt — on [_captureAnalyzerIsolate]'s dedicated worker isolate, never
-  /// the main isolate. A no-op if the cell has no photo, or an analysis for
-  /// it is already in flight.
+  /// Scores [cellIndex], then rescores every already-captured grid-adjacent
+  /// neighbour exactly once (spec: "as soon as both this cell and at least
+  /// one grid-adjacent cell have a captured photo") — [_scoreCell] itself
+  /// never recurses into its own neighbours, which is what keeps this to
+  /// one level: two grid-adjacent cells that both already have a photo
+  /// would otherwise call back into each other forever (neither's
+  /// [CaptureSessionLoaded.analyzingCellIds] guard is still set by the time
+  /// the other's rescore loop runs, since each clears its own entry right
+  /// after emitting its result).
+  ///
+  /// Persists every result from this wave (self plus up to 4 neighbours) in
+  /// one [GridCaptureRepository.recordCellQualityBatch] call rather than one
+  /// full-record Hive write per cell — up to a 5x cut in how many times a
+  /// single shot re-serializes the whole (ever-growing) session record.
   Future<void> _analyzeCellQuality(int cellIndex) async {
+    final results = <int, CellQualityResult>{};
+
+    final selfResult = await _scoreCell(cellIndex);
+    if (selfResult != null) results[cellIndex] = selfResult;
+
     final started = state;
-    if (started is! CaptureSessionLoaded) return;
+    if (started is CaptureSessionLoaded) {
+      final grid = started.grid;
+      if (grid != null && cellIndex >= 0 && cellIndex < grid.cells.length) {
+        final row = cellIndex ~/ grid.cols;
+        final col = cellIndex % grid.cols;
+        final neighbourIndices = [
+          if (col > 0) cellIndex - 1,
+          if (col < grid.cols - 1) cellIndex + 1,
+          if (row > 0) cellIndex - grid.cols,
+          if (row < grid.rows - 1) cellIndex + grid.cols,
+        ];
+        for (final neighbourIndex in neighbourIndices) {
+          if (grid.cells[neighbourIndex].shotPaths.isNotEmpty) {
+            final neighbourResult = await _scoreCell(neighbourIndex);
+            if (neighbourResult != null) results[neighbourIndex] = neighbourResult;
+          }
+        }
+      }
+    }
+
+    if (results.isNotEmpty) {
+      _repository.recordCellQualityBatch(_floorId, _wallId, results);
+    }
+  }
+
+  /// Runs Tier 1 (always) and Tier 2/3 (against every grid-adjacent cell
+  /// that already has a photo) for [cellIndex]'s shots, emits the result,
+  /// and returns it for [_analyzeCellQuality] to persist — every shot taken
+  /// for the cell, not just the first, so a strong retake wins over a weak
+  /// initial attempt. Returns null (a no-op) if the cell has no photo, an
+  /// analysis for it is already in flight, or analysis fails. Never
+  /// rescores its own neighbours — see [_analyzeCellQuality], the only
+  /// caller that should trigger that.
+  Future<CellQualityResult?> _scoreCell(int cellIndex) async {
+    final started = state;
+    if (started is! CaptureSessionLoaded) return null;
     final grid = started.grid;
-    if (grid == null || cellIndex < 0 || cellIndex >= grid.cells.length) return;
-    if (started.analyzingCellIds.contains(cellIndex)) return;
+    if (grid == null || cellIndex < 0 || cellIndex >= grid.cells.length) return null;
+    if (started.analyzingCellIds.contains(cellIndex)) return null;
 
     final shotPaths = grid.cells[cellIndex].shotPaths;
     if (shotPaths.isEmpty) {
@@ -255,7 +300,7 @@ class CaptureSessionCubit extends Cubit<CaptureSessionState> {
           ),
         );
       }
-      return;
+      return null;
     }
 
     emit(started.copyWith(analyzingCellIds: {...started.analyzingCellIds, cellIndex}));
@@ -282,7 +327,7 @@ class CaptureSessionCubit extends Cubit<CaptureSessionState> {
     ];
 
     try {
-      final result = await _captureAnalyzerIsolate.analyze(
+      final result = analyzeCellQuality(
         CellQualityRequest(
           cellIndex: cellIndex,
           imagePaths: shotPaths,
@@ -290,13 +335,14 @@ class CaptureSessionCubit extends Cubit<CaptureSessionState> {
           neighbours: capturedNeighbours,
         ),
       );
-      _repository.recordCellQuality(_floorId, _wallId, cellIndex, result);
       // analyzeCellQuality() never sets `overridden` (it has no notion of a
-      // human decision) - re-read it from the repository rather than
-      // trusting the cubit's own in-memory map, which would still be stale
-      // right after this exact cell's photo was just replaced (capturePhoto
+      // human decision) - read it from the repository rather than trusting
+      // the cubit's own in-memory map, which would still be stale right
+      // after this exact cell's photo was just replaced (capturePhoto
       // already reset the persisted flag by then; the in-memory map hasn't).
-      final overridden = _repository.getCellQuality(_floorId, _wallId)[cellIndex]?.overridden ?? false;
+      // This doesn't need [result] to already be persisted first — the flag
+      // lives independently of the quality record itself.
+      final overridden = _repository.getCellQualityOverridden(_floorId, _wallId, cellIndex);
       final merged = result.withOverridden(overridden);
       final afterAnalysis = state;
       if (afterAnalysis is CaptureSessionLoaded) {
@@ -307,6 +353,7 @@ class CaptureSessionCubit extends Cubit<CaptureSessionState> {
           ),
         );
       }
+      return merged;
     } catch (error) {
       debugPrint('CaptureSessionCubit: quality analysis failed for cell $cellIndex: $error');
       final afterFailure = state;
@@ -317,16 +364,7 @@ class CaptureSessionCubit extends Cubit<CaptureSessionState> {
           ),
         );
       }
-    }
-
-    // A fresh shot on this cell can newly satisfy an already-captured
-    // neighbour's Tier 2/3 too (spec: "as soon as both this cell and at
-    // least one grid-adjacent cell have a captured photo") - rescore them,
-    // one level only, so this never cascades indefinitely.
-    for (final neighbourIndex in neighbourCells.values) {
-      if (grid.cells[neighbourIndex].shotPaths.isNotEmpty) {
-        unawaited(_analyzeCellQuality(neighbourIndex));
-      }
+      return null;
     }
   }
 

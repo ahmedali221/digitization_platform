@@ -89,15 +89,26 @@ abstract class GridCaptureRepository {
   /// features read via [SiteRepository].
   Map<int, CellQualityResult> getCellQuality(String floorId, String wallId);
 
-  /// Persists one cell's quality result against its current session record.
-  /// A no-op if that cell's session doesn't exist yet (it always will by
-  /// the time [CaptureAnalyzer] can run, since that needs a saved photo
-  /// first).
-  void recordCellQuality(
+  /// One cell's "keep this shot anyway" flag, without building the whole
+  /// [getCellQuality] map just to read it — [CaptureSessionCubit] needs this
+  /// on every cell it (re)scores (itself plus every already-captured
+  /// neighbour), so a full-map scan there would cost O(cells) per photo.
+  /// False if the cell (or its session) doesn't exist yet.
+  bool getCellQualityOverridden(String floorId, String wallId, int cellIndex);
+
+  /// Persists every entry in [results] (keyed by cell index) against the
+  /// current session record in a single read-mutate-write pass — one photo
+  /// capture can (re)score itself plus up to four grid-adjacent neighbours
+  /// in one go, and each of those was previously its own full-record Hive
+  /// write; batching them into one keeps that write count (and the
+  /// serialization cost, which scales with how much the session has
+  /// accumulated so far) from multiplying by up to 5x per shot. A no-op if
+  /// the session doesn't exist yet (it always will by the time
+  /// [CaptureAnalyzer] can run, since that needs a saved photo first).
+  void recordCellQualityBatch(
     String floorId,
     String wallId,
-    int cellIndex,
-    CellQualityResult result,
+    Map<int, CellQualityResult> results,
   );
 
   /// Records the operator's explicit "keep this shot anyway" decision for a

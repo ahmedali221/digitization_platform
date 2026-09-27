@@ -162,32 +162,36 @@ class CaptureSessionRecord extends HiveObject {
 
   bool get isComplete => filledCellCount == cells.length;
 
-  CaptureCellRecord cellAt(int row, int col) =>
-      cells.firstWhere((c) => c.row == row && c.col == col);
+  // [cells] is always built row-major, sized gridRows*gridCols (see
+  // _newSessionRecord/reshapeGrid in GridCaptureRepositoryImpl), so a cell's
+  // position in the list is its index directly — a firstWhere scan (or,
+  // worse, rebuilding the whole list to patch one cell) costs O(cells) on
+  // every single photo, and grid_capture's own performance audit found that
+  // compounding into a real, measured slowdown as a session's photo count
+  // grows (each mutation preceded a full-record Hive write whose cost also
+  // scales with how much the session has accumulated so far).
+  int _indexOf(int row, int col) => row * gridCols + col;
+
+  CaptureCellRecord cellAt(int row, int col) => cells[_indexOf(row, col)];
 
   void addPhotoAt(int row, int col, CapturePhotoRecord photo) {
-    cells = cells
-        .map((c) => c.row == row && c.col == col ? c.withPhotoAdded(photo) : c)
-        .toList();
+    final index = _indexOf(row, col);
+    cells[index] = cells[index].withPhotoAdded(photo);
   }
 
   bool removePhotoAt(int row, int col, String filePath) {
-    final cell = cellAt(row, col);
+    final index = _indexOf(row, col);
+    final cell = cells[index];
     if (!cell.photos.any((photo) => photo.file == filePath)) return false;
 
-    cells = cells
-        .map(
-          (candidate) => candidate.row == row && candidate.col == col
-              ? CaptureCellRecord(
-                  row: candidate.row,
-                  col: candidate.col,
-                  photos: candidate.photos
-                      .where((photo) => photo.file != filePath)
-                      .toList(),
-                )
-              : candidate,
-        )
-        .toList();
+    // Matches the pre-existing behaviour this replaces: removing a photo
+    // resets quality/qualityOverridden too (defaults, left unset below) —
+    // deletePhoto's caller always re-runs analysis afterwards anyway.
+    cells[index] = CaptureCellRecord(
+      row: cell.row,
+      col: cell.col,
+      photos: cell.photos.where((photo) => photo.file != filePath).toList(),
+    );
     return true;
   }
 }
