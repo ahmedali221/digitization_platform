@@ -11,6 +11,7 @@ import 'package:path_provider/path_provider.dart';
 ///   app_documents/backup/{session_id}/    write-once raw-photo copies
 ///   app_documents/thumbs/                 status-index thumbnails
 ///   app_documents/exports/{site_id}/      generated backup zips, pending share
+///   app_documents/follow_up/{site_id}/    a follow-up package and its captures
 ///
 /// Also wraps `disk_space_plus` as the storage-watchdog primitive (Phase 7):
 /// callers decide the threshold, this just reports free space honestly.
@@ -23,7 +24,13 @@ class DirectoryManager {
 
   /// Top-level segments a stored path can be re-anchored from — see
   /// [resolveExistingFile].
-  static const _knownRoots = {'sessions', 'backup', 'packages', 'thumbs'};
+  static const _knownRoots = {
+    'sessions',
+    'backup',
+    'packages',
+    'thumbs',
+    'follow_up',
+  };
 
   /// Resolves and caches the app documents directory once. Callers that only
   /// ever await a directory method don't need this — but `MapGeometryMapper`
@@ -43,6 +50,9 @@ class DirectoryManager {
       _ensure(['backup', sessionId]);
 
   Future<Directory> thumbsDir() => _ensure(['thumbs']);
+
+  Future<Directory> followUpDir(String siteId, [String? child]) =>
+      _ensure(['follow_up', siteId, if (child != null) child]);
 
   Future<Directory> exportsDir(String siteId) =>
       _ensure(['exports', siteId]);

@@ -123,6 +123,7 @@ class _SitesListBodyState extends State<_SitesListBody> {
                   onOpen: site.isReady
                       ? () => context.push('/sites/${site.id}/buildings')
                       : () {},
+                  onFollowUp: () => context.push('/sites/${site.id}/follow-up'),
                   onDownload: () =>
                       _confirmAndDownload(context, site.id, site.name),
                   onArchiveToggle: () => site.isArchived

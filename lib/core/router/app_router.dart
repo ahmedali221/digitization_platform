@@ -2,6 +2,7 @@ import 'package:get_it/get_it.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../features/auth/presentation/pages/login_page.dart';
+import '../../features/follow_up/presentation/pages/follow_up_page.dart';
 import '../../features/grid_capture/presentation/pages/camera_capture_page.dart';
 import '../../features/grid_capture/presentation/pages/coverage_review_page.dart';
 import '../../features/grid_capture/presentation/pages/grid_capture_page.dart';
@@ -135,6 +136,11 @@ final GoRouter appRouter = GoRouter(
         floorId: state.pathParameters['floorId']!,
         wallId: state.pathParameters['wallId']!,
       ),
+    ),
+    GoRoute(
+      path: '/sites/:siteId/follow-up',
+      builder: (context, state) =>
+          FollowUpPage(siteId: state.pathParameters['siteId']!),
     ),
     GoRoute(path: '/sync', builder: (context, state) => const SyncQueuePage()),
     GoRoute(

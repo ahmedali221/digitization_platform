@@ -1,6 +1,7 @@
 import 'package:hive_flutter/hive_flutter.dart';
 import 'package:workmanager/workmanager.dart';
 
+import '../../features/follow_up/domain/services/follow_up_upload_runner.dart';
 import '../../features/sync_queue/domain/services/sync_queue_runner.dart';
 import '../di/injection_container.dart';
 import '../storage/hive_boxes.dart';
@@ -19,6 +20,7 @@ void syncCallbackDispatcher() {
     await registerAdaptersAndOpenBoxes();
     setupDependencies();
     await sl<SyncQueueRunner>().drainAll();
+    await sl<FollowUpUploadRunner>().drainAll();
     return true;
   });
 }

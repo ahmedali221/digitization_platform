@@ -17,9 +17,11 @@ class SiteCard extends StatelessWidget {
     required this.onOpen,
     required this.onDownload,
     required this.onArchiveToggle,
+    required this.onFollowUp,
   });
 
   final SiteEntity site;
+  final VoidCallback onFollowUp;
   final VoidCallback onOpen;
   final VoidCallback onDownload;
   final VoidCallback onArchiveToggle;
@@ -47,6 +49,7 @@ class SiteCard extends StatelessWidget {
                 _NotDownloadedRow(onDownload: onDownload),
               if (site.isDownloading) _DownloadingRow(site: site),
               if (site.isReady) _ReadySummaryRow(site: site),
+              _FollowUpLink(onTap: onFollowUp),
             ],
           ),
         ),
@@ -297,6 +300,26 @@ class _DownloadingRow extends StatelessWidget {
         const SizedBox(height: AppSpacing.xs),
         ThinProgressBar(progress: site.downloadProgress / 100),
       ],
+    );
+  }
+}
+
+/// Opens the follow-up captures of a site, whether or not its map has been
+/// downloaded: a follow-up package carries everything its screens show.
+class _FollowUpLink extends StatelessWidget {
+  const _FollowUpLink({required this.onTap});
+
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.only(top: AppSpacing.xs),
+      child: TextButton.icon(
+        onPressed: onTap,
+        icon: const Icon(Icons.add_a_photo_outlined, size: 18),
+        label: const Text('Follow-up captures'),
+      ),
     );
   }
 }

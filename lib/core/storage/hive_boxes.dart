@@ -1,5 +1,6 @@
 import 'package:hive_flutter/hive_flutter.dart';
 
+import '../../features/follow_up/data/models/follow_up_upload_record.dart';
 import '../../features/grid_capture/data/models/capture_session_record.dart';
 import '../../features/grid_capture/data/models/cell_quality_record.dart';
 import '../../features/sync_queue/data/models/sync_queue_item_record.dart';
@@ -26,6 +27,7 @@ class HiveBoxes {
   static const String device = 'device';
   static const String unassignedCaptures = 'unassigned_captures';
   static const String settings = 'settings';
+  static const String followUpUploads = 'follow_up_uploads';
 }
 
 /// Registers every `@HiveType` adapter and opens every box. Called once at
@@ -44,6 +46,7 @@ Future<void> registerAdaptersAndOpenBoxes() async {
   Hive.registerAdapter(CellQualityRecordAdapter());
   Hive.registerAdapter(NeighbourQualityRecordAdapter());
   Hive.registerAdapter(ShotQualityScoreRecordAdapter());
+  Hive.registerAdapter(FollowUpUploadRecordAdapter());
 
   await Future.wait([
     Hive.openBox<SitePackageRecord>(HiveBoxes.sites),
@@ -57,5 +60,6 @@ Future<void> registerAdaptersAndOpenBoxes() async {
     Hive.openBox(HiveBoxes.device),
     Hive.openBox<UnassignedCaptureRecord>(HiveBoxes.unassignedCaptures),
     Hive.openBox(HiveBoxes.settings),
+    Hive.openBox<FollowUpUploadRecord>(HiveBoxes.followUpUploads),
   ]);
 }

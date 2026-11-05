@@ -4,6 +4,11 @@ import 'package:get_it/get_it.dart';
 import '../../features/auth/data/datasources/auth_remote_data_source.dart';
 import '../../features/auth/data/repositories/auth_repository_impl.dart';
 import '../../features/auth/domain/repositories/auth_repository.dart';
+import '../../features/follow_up/data/datasources/follow_up_local_data_source.dart';
+import '../../features/follow_up/data/datasources/follow_up_remote_data_source.dart';
+import '../../features/follow_up/data/repositories/follow_up_repository_impl.dart';
+import '../../features/follow_up/domain/repositories/follow_up_repository.dart';
+import '../../features/follow_up/domain/services/follow_up_upload_runner.dart';
 import '../../features/grid_capture/data/datasources/camera_preferences_local_data_source.dart';
 import '../../features/grid_capture/data/datasources/capture_session_local_data_source.dart';
 import '../../features/grid_capture/data/datasources/grid_capture_local_data_source.dart';
@@ -198,6 +203,28 @@ void setupDependencies() {
     ),
   );
 
+  GetIt.instance.registerLazySingleton<FollowUpLocalDataSource>(
+    () => FollowUpLocalDataSource(),
+  );
+  GetIt.instance.registerLazySingleton<FollowUpRemoteDataSource>(
+    () => FollowUpRemoteDataSource(GetIt.instance<Dio>()),
+  );
+  GetIt.instance.registerLazySingleton<FollowUpUploadRunner>(
+    () => FollowUpUploadRunner(
+      local: GetIt.instance<FollowUpLocalDataSource>(),
+      remote: GetIt.instance<FollowUpRemoteDataSource>(),
+      resolveFile: GetIt.instance<DirectoryManager>().resolveExistingFile,
+    ),
+  );
+  GetIt.instance.registerLazySingleton<FollowUpRepository>(
+    () => FollowUpRepositoryImpl(
+      local: GetIt.instance<FollowUpLocalDataSource>(),
+      remote: GetIt.instance<FollowUpRemoteDataSource>(),
+      directoryManager: GetIt.instance<DirectoryManager>(),
+      runner: GetIt.instance<FollowUpUploadRunner>(),
+    ),
+  );
+
   GetIt.instance.registerLazySingleton<SiteBackupService>(
     () => SiteBackupService(
       siteRepository: GetIt.instance<SiteRepository>(),
@@ -226,6 +253,7 @@ void wireForegroundSyncOnReconnect() {
     if (connected) {
       GetIt.instance<SyncQueueRunner>().drainAll();
       GetIt.instance<UnassignedWallRepository>().checkAllResolutions();
+      GetIt.instance<FollowUpUploadRunner>().drainAll();
     }
   });
 }
@@ -247,5 +275,6 @@ void wireSyncOnLogin() {
     // pass rather than waiting for the next trigger.
     await GetIt.instance<CaptureRecoveryService>().recoverOrphanedWalls();
     await GetIt.instance<SyncQueueRunner>().drainAll();
+    await GetIt.instance<FollowUpUploadRunner>().drainAll();
   });
 }

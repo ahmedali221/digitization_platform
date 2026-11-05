@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 import 'app_colors.dart';
 import 'app_text_theme.dart';
@@ -18,6 +19,9 @@ class AppTheme {
         foregroundColor: AppColors.textPrimary,
         elevation: 0,
         surfaceTintColor: Colors.transparent,
+        // Dark icons: with a transparent bar over this light background, the
+        // default leaves the status bar's clock and battery white on white.
+        systemOverlayStyle: SystemUiOverlayStyle.dark,
       ),
       dividerColor: AppColors.outlineSubtle,
     );

@@ -18,4 +18,11 @@ class ApiEndpoints {
       '/sync/sessions/$sessionId/confirm';
 
   static String wallCaptures(String wallId) => '/walls/$wallId/captures';
+
+  static String followUpPackage(String siteId) =>
+      '/sites/$siteId/follow-up-package';
+  static String annotationRecapture(int annotationId) =>
+      '/annotations/$annotationId/recapture';
+  static String targetImage(String arKey) => '/studio-assets/$arKey/image';
+  static const String followUpResults = '/follow-up/results';
 }

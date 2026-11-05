@@ -16,4 +16,5 @@ class HiveTypeIds {
   static const int cellQualityRecord = 9;
   static const int neighbourQualityRecord = 10;
   static const int shotQualityScoreRecord = 11;
+  static const int followUpUploadRecord = 12;
 }
