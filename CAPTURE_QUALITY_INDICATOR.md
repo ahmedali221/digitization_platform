@@ -96,12 +96,25 @@ state (`cellQuality: Map<int, CellQualityResult>`) and persisted through
 `GridCaptureRepository.getCellQuality`/`recordCellQuality`, never touching
 the shared entity.
 
-**Isolate dispatch:** `CaptureSessionCubit._analyzeCellQuality` calls
-`compute(analyzeCellQuality, request)` — same pattern the existing
-`grid_preview_composer.dart` already used for its own isolate work. Runs
-fire-and-forget after `takePhoto()`/`deletePhoto()` (never blocks the
-shutter), and cascades one level to already-captured neighbours whose
-Tier 2/3 the new photo could newly satisfy.
+**Isolate dispatch:** analysis must never run on the main isolate. Dart shares
+the Android main thread, so doing it there freezes the screen until Android
+reports the app as not responding. `CaptureSessionCubit` sends requests through
+`CellQualityAnalyzer`, implemented by `CaptureAnalyzerIsolate`: one long-lived
+worker that keeps extracted features between shots. Runs fire-and-forget after
+`takePhoto()`/`deletePhoto()` (never blocks the shutter), and cascades one level
+to already-captured neighbours whose Tier 2/3 the new photo could newly satisfy.
+
+The cubit keeps one queue per instance, holding each cell at most once. A cell
+whose shots change mid-analysis has that result discarded and is scored again.
+The queue finishes even after the cubit closes, so a score is still saved when
+the operator leaves the page right after a shot.
+
+**Cost limits:** SIFT runs on a copy of each photo scaled to
+`analysisMaxLongSide`, keeping at most `siftFeatures` keypoints. Sharpness and
+contrast are still measured on the full-size photo. Capture and stitching are
+unaffected, but keypoint and match counts are lower than `--audit` reports for
+the same photos. The exact parity described in §3 no longer holds for those
+counts.
 
 ---
 

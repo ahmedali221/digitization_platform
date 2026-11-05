@@ -17,6 +17,7 @@ import '../../data/datasources/camera_preferences_local_data_source.dart';
 import '../../data/datasources/grid_capture_local_data_source.dart';
 import '../../domain/entities/capture_quality.dart';
 import '../../domain/repositories/grid_capture_repository.dart';
+import '../../domain/services/cell_quality_analyzer.dart';
 import '../cubit/capture_session_cubit.dart';
 import '../cubit/capture_session_state.dart';
 import '../widgets/camera_grid_navigator.dart';
@@ -51,6 +52,7 @@ class CameraCapturePage extends StatelessWidget {
           CaptureSessionCubit(
               GetIt.instance<GridCaptureRepository>(),
               GetIt.instance<GridCaptureLocalDataSource>(),
+              GetIt.instance<CellQualityAnalyzer>(),
             )
             ..init(floorId, wallId)
             ..openCell(initialCell),
@@ -285,10 +287,10 @@ class _CameraBodyState extends State<_CameraBody> with WidgetsBindingObserver {
       );
       final controller = CameraController(
         primaryCamera,
-        // Max, not high — the analyzer's sharpness/keypoint-density scores
-        // are normalized per-megapixel, so a capped preset scores lower
-        // than a native camera app's default (much higher) resolution for
-        // the same physical wall.
+        // Max, not high: these photos are what gets stitched, and the
+        // analyzer's sharpness score reads them at full size. Keeping the
+        // analyzer fast is its own job (CaptureQualityConfig.analysisMaxLongSide),
+        // not a reason to capture less.
         ResolutionPreset.max,
         enableAudio: false,
       );

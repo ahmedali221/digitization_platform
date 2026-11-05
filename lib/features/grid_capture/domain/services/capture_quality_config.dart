@@ -14,9 +14,10 @@ enum NeighbourCombineMode { average, worstCase }
 /// cut-offs can only be found by testing on real device captures").
 ///
 /// Where stitch.py already tunes the same knob (SIFT params, Lowe ratio,
-/// RANSAC threshold, direction/scale checks), the default here matches it
-/// exactly, so an on-device Tier 1-3 score stays numerically consistent with
-/// what the backend's own `--audit` would measure for the same photos.
+/// RANSAC threshold, direction/scale checks), the default here matches it,
+/// except for [analysisMaxLongSide] and [siftFeatures]: stitch.py runs on a
+/// server with neither limit, and a phone can't. Keypoint and match counts
+/// here are therefore lower than `--audit` reports for the same photos.
 ///
 /// The Tier 1/2/3 weightings and the normalization "full score" anchors
 /// below are this spec's own starting points (§3, §9) — they have not yet
@@ -24,9 +25,17 @@ enum NeighbourCombineMode { average, worstCase }
 /// once that measurement pass happens.
 class CaptureQualityConfig {
   const CaptureQualityConfig({
-    // -- Tier 1: SIFT (cv2.SIFT_create() parity — spec: "no custom params,
-    // consistency matters more than tuning this in isolation") --
-    this.siftFeatures = 0,
+    // -- Cost limits. Only the on-device score uses these: capture stays at
+    // full resolution and stitching still gets the full-size photos.
+    // Measured on a 16-thread desktop, matching one real pair of cells took
+    // 349 s at full size (133k x 97k keypoints) and 0.35 s with these values,
+    // still finding over 1,200 inliers against ransacInliersFullScore's 60.
+    // Without them, one shot pins a phone for many minutes and peaks above
+    // 3 GB, because SIFT doubles the image and matching is N x M.
+    this.analysisMaxLongSide = 2000,
+    this.siftFeatures = 8000,
+
+    // -- Tier 1: SIFT (otherwise cv2.SIFT_create() parity) --
     this.siftOctaveLayers = 3,
     this.siftContrastThreshold = 0.04,
     this.siftEdgeThreshold = 10,
@@ -97,6 +106,10 @@ class CaptureQualityConfig {
     this.yellowMaxScore = 79,
   });
 
+  /// Photos larger than this are scaled down before SIFT.
+  final int analysisMaxLongSide;
+
+  /// Keeps the strongest keypoints up to this many, per image.
   final int siftFeatures;
   final int siftOctaveLayers;
   final double siftContrastThreshold;

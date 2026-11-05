@@ -10,7 +10,7 @@ import '../../../../core/domain/entities/wall.dart';
 import '../../data/datasources/grid_capture_local_data_source.dart';
 import '../../domain/entities/capture_quality.dart';
 import '../../domain/repositories/grid_capture_repository.dart';
-import '../../domain/services/capture_analyzer.dart';
+import '../../domain/services/cell_quality_analyzer.dart';
 import 'capture_session_state.dart';
 
 /// Fixed rows x cols choices offered on the grid-init screen, in addition to
@@ -38,13 +38,21 @@ class CaptureSessionCubit extends Cubit<CaptureSessionState> {
   CaptureSessionCubit(
     this._repository,
     this._localDataSource,
+    this._analyzer,
   ) : super(const CaptureSessionLoading());
 
   final GridCaptureRepository _repository;
   final GridCaptureLocalDataSource _localDataSource;
+  final CellQualityAnalyzer _analyzer;
   String _floorId = '';
   String _wallId = '';
   StreamSubscription<WallEntity?>? _subscription;
+
+  /// Cells waiting to be scored, in order, each at most once. However fast the
+  /// operator shoots, the backlog can't outgrow the grid.
+  final Set<int> _queuedCells = {};
+  int? _scoringCell;
+  bool _drainingQueue = false;
 
   /// Set by [openCell] when called before the wall stream's first event
   /// arrives (e.g. camera-capture's `..init()..openCell(initialCell)`
@@ -184,9 +192,9 @@ class CaptureSessionCubit extends Cubit<CaptureSessionState> {
     // watches (site/wall-status), which a capture never touches — apply the
     // new shot to this cubit's own state directly rather than waiting for an
     // event that will never arrive.
-    if (updatedWall != null) {
+    if (updatedWall != null && !isClosed) {
       _onWallChanged(updatedWall);
-      unawaited(_analyzeCellQuality(cellId));
+      _analyzeCellQuality(cellId);
     }
   }
 
@@ -211,123 +219,132 @@ class CaptureSessionCubit extends Cubit<CaptureSessionState> {
     // caches decoded bytes by path only, can't keep showing the file this
     // path used to point to.
     imageCache.evict(FileImage(File(filePath)));
-    if (updatedWall != null) {
+    if (updatedWall != null && !isClosed) {
       _onWallChanged(updatedWall);
       // The remaining "first" shot (if any) may be a different file than
       // what was last scored — rescore so the badge never describes a
       // photo that's no longer the one on screen. A cell that's now empty
-      // safely no-ops inside _analyzeCellQuality; its stale quality record
-      // is simply never read once GridCellTile stops seeing shotPaths.
-      unawaited(_analyzeCellQuality(cellId));
+      // safely no-ops inside _scoreCell; its stale quality record is simply
+      // never read once GridCellTile stops seeing shotPaths.
+      _analyzeCellQuality(cellId);
     }
   }
 
-  /// Scores [cellIndex], then rescores every already-captured grid-adjacent
-  /// neighbour exactly once (spec: "as soon as both this cell and at least
-  /// one grid-adjacent cell have a captured photo") — [_scoreCell] itself
-  /// never recurses into its own neighbours, which is what keeps this to
-  /// one level: two grid-adjacent cells that both already have a photo
-  /// would otherwise call back into each other forever (neither's
-  /// [CaptureSessionLoaded.analyzingCellIds] guard is still set by the time
-  /// the other's rescore loop runs, since each clears its own entry right
-  /// after emitting its result).
+  /// Queues [cellIndex], then every already-captured grid-adjacent neighbour
+  /// (spec: "as soon as both this cell and at least one grid-adjacent cell have
+  /// a captured photo"). One level only: [_scoreCell] never queues anything.
   ///
-  /// Persists every result from this wave (self plus up to 4 neighbours) in
-  /// one [GridCaptureRepository.recordCellQualityBatch] call rather than one
-  /// full-record Hive write per cell — up to a 5x cut in how many times a
-  /// single shot re-serializes the whole (ever-growing) session record.
-  Future<void> _analyzeCellQuality(int cellIndex) async {
-    final results = <int, CellQualityResult>{};
-
-    final selfResult = await _scoreCell(cellIndex);
-    if (selfResult != null) results[cellIndex] = selfResult;
-
-    final started = state;
-    if (started is CaptureSessionLoaded) {
-      final grid = started.grid;
-      if (grid != null && cellIndex >= 0 && cellIndex < grid.cells.length) {
-        final row = cellIndex ~/ grid.cols;
-        final col = cellIndex % grid.cols;
-        final neighbourIndices = [
-          if (col > 0) cellIndex - 1,
-          if (col < grid.cols - 1) cellIndex + 1,
-          if (row > 0) cellIndex - grid.cols,
-          if (row < grid.rows - 1) cellIndex + grid.cols,
-        ];
-        for (final neighbourIndex in neighbourIndices) {
-          if (grid.cells[neighbourIndex].shotPaths.isNotEmpty) {
-            final neighbourResult = await _scoreCell(neighbourIndex);
-            if (neighbourResult != null) results[neighbourIndex] = neighbourResult;
-          }
-        }
-      }
-    }
-
-    if (results.isNotEmpty) {
-      _repository.recordCellQualityBatch(_floorId, _wallId, results);
-    }
-  }
-
-  /// Runs Tier 1 (always) and Tier 2/3 (against every grid-adjacent cell
-  /// that already has a photo) for [cellIndex]'s shots, emits the result,
-  /// and returns it for [_analyzeCellQuality] to persist — every shot taken
-  /// for the cell, not just the first, so a strong retake wins over a weak
-  /// initial attempt. Returns null (a no-op) if the cell has no photo, an
-  /// analysis for it is already in flight, or analysis fails. Never
-  /// rescores its own neighbours — see [_analyzeCellQuality], the only
-  /// caller that should trigger that.
-  Future<CellQualityResult?> _scoreCell(int cellIndex) async {
-    final started = state;
-    if (started is! CaptureSessionLoaded) return null;
-    final grid = started.grid;
-    if (grid == null || cellIndex < 0 || cellIndex >= grid.cells.length) return null;
-    if (started.analyzingCellIds.contains(cellIndex)) return null;
-
-    final shotPaths = grid.cells[cellIndex].shotPaths;
-    if (shotPaths.isEmpty) {
-      // The cell's last photo was just deleted — this cubit's in-memory
-      // cellQuality map isn't touched by _onWallChanged (it only carries
-      // `wall` forward), so without this the stale result (and its
-      // imagePath, pointing at a now-deleted file) would keep describing
-      // this cell until a future shot happens to trigger a fresh analysis —
-      // and if that shot's number reuses the deleted best shot's number,
-      // representativeShotPath would match it by path and show the old
-      // score against the new photo.
-      if (started.cellQuality.containsKey(cellIndex)) {
-        emit(
-          started.copyWith(
-            cellQuality: {...started.cellQuality}..remove(cellIndex),
-          ),
-        );
-      }
-      return null;
-    }
-
-    emit(started.copyWith(analyzingCellIds: {...started.analyzingCellIds, cellIndex}));
+  /// The cell goes ahead of its neighbours, even if they were already waiting,
+  /// because they score against whichever of its shots wins.
+  void _analyzeCellQuality(int cellIndex) {
+    final grid = _repository.getWall(_floorId, _wallId)?.grid;
+    if (grid == null || cellIndex < 0 || cellIndex >= grid.cells.length) return;
 
     final row = cellIndex ~/ grid.cols;
     final col = cellIndex % grid.cols;
-    final neighbourCells = <NeighbourDirection, int>{
-      if (col > 0) NeighbourDirection.left: cellIndex - 1,
-      if (col < grid.cols - 1) NeighbourDirection.right: cellIndex + 1,
-      if (row > 0) NeighbourDirection.top: cellIndex - grid.cols,
-      if (row < grid.rows - 1) NeighbourDirection.bottom: cellIndex + grid.cols,
-    };
-    final capturedNeighbours = [
-      for (final entry in neighbourCells.entries)
-        if (grid.cells[entry.value].shotPaths.isNotEmpty)
-          NeighbourImageInput(
-            direction: entry.key,
-            cellIndex: entry.value,
-            imagePath: representativeShotPath(
-              grid.cells[entry.value].shotPaths,
-              started.cellQuality[entry.value],
-            )!,
-          ),
+    final cells = [
+      cellIndex,
+      for (final neighbour in [
+        if (col > 0) cellIndex - 1,
+        if (col < grid.cols - 1) cellIndex + 1,
+        if (row > 0) cellIndex - grid.cols,
+        if (row < grid.rows - 1) cellIndex + grid.cols,
+      ])
+        if (grid.cells[neighbour].shotPaths.isNotEmpty) neighbour,
     ];
+    _queuedCells
+      ..removeAll(cells)
+      ..addAll(cells);
+    _emitAnalyzingCells();
+    unawaited(_drainAnalysisQueue());
+  }
 
+  /// Scores queued cells one at a time until none are left, including after
+  /// this cubit closes: the operator can leave the page right after a shot, and
+  /// that shot still needs its score saved for the next page to read.
+  ///
+  /// Persists everything in one [GridCaptureRepository.recordCellQualityBatch]
+  /// call rather than one full-record Hive write per cell, which would
+  /// re-serialize the whole (ever-growing) session record each time.
+  Future<void> _drainAnalysisQueue() async {
+    if (_drainingQueue) return;
+    _drainingQueue = true;
+    final results = <int, CellQualityResult>{};
     try {
-      final result = analyzeCellQuality(
+      while (_queuedCells.isNotEmpty) {
+        final cellIndex = _queuedCells.first;
+        _queuedCells.remove(cellIndex);
+        final result = await _scoreCell(cellIndex);
+        if (result != null) {
+          results[cellIndex] = result;
+        } else {
+          results.remove(cellIndex);
+        }
+      }
+      if (results.isNotEmpty) {
+        _repository.recordCellQualityBatch(_floorId, _wallId, results);
+      }
+    } catch (error) {
+      debugPrint('CaptureSessionCubit: saving quality results failed: $error');
+    } finally {
+      _drainingQueue = false;
+    }
+  }
+
+  /// Scores every shot of [cellIndex] (Tier 1, plus Tier 2/3 against each
+  /// grid-adjacent cell with a photo), emits the result and returns it.
+  /// Returns null if the cell has no photo, analysis fails, or its shots
+  /// changed while it ran, in which case the change already queued a new run.
+  Future<CellQualityResult?> _scoreCell(int cellIndex) async {
+    _scoringCell = cellIndex;
+    try {
+      // From the repository, not `state`: a closed cubit's state no longer
+      // follows what other pages' cubits do to this wall.
+      final grid = _repository.getWall(_floorId, _wallId)?.grid;
+      final known = state;
+      if (grid == null || known is! CaptureSessionLoaded) return null;
+      if (cellIndex < 0 || cellIndex >= grid.cells.length) return null;
+
+      final shotPaths = grid.cells[cellIndex].shotPaths;
+      if (shotPaths.isEmpty) {
+        // The cell's last photo was just deleted — this cubit's in-memory
+        // cellQuality map isn't touched by _onWallChanged (it only carries
+        // `wall` forward), so without this the stale result (and its
+        // imagePath, pointing at a now-deleted file) would keep describing
+        // this cell until a future shot happens to trigger a fresh analysis —
+        // and if that shot's number reuses the deleted best shot's number,
+        // representativeShotPath would match it by path and show the old
+        // score against the new photo.
+        _updateLoaded(
+          (loaded) => loaded.copyWith(
+            cellQuality: {...loaded.cellQuality}..remove(cellIndex),
+          ),
+        );
+        return null;
+      }
+
+      final row = cellIndex ~/ grid.cols;
+      final col = cellIndex % grid.cols;
+      final neighbourCells = <NeighbourDirection, int>{
+        if (col > 0) NeighbourDirection.left: cellIndex - 1,
+        if (col < grid.cols - 1) NeighbourDirection.right: cellIndex + 1,
+        if (row > 0) NeighbourDirection.top: cellIndex - grid.cols,
+        if (row < grid.rows - 1) NeighbourDirection.bottom: cellIndex + grid.cols,
+      };
+      final capturedNeighbours = [
+        for (final entry in neighbourCells.entries)
+          if (grid.cells[entry.value].shotPaths.isNotEmpty)
+            NeighbourImageInput(
+              direction: entry.key,
+              cellIndex: entry.value,
+              imagePath: representativeShotPath(
+                grid.cells[entry.value].shotPaths,
+                known.cellQuality[entry.value],
+              )!,
+            ),
+      ];
+
+      final result = await _analyzer.analyze(
         CellQualityRequest(
           cellIndex: cellIndex,
           imagePaths: shotPaths,
@@ -335,37 +352,51 @@ class CaptureSessionCubit extends Cubit<CaptureSessionState> {
           neighbours: capturedNeighbours,
         ),
       );
-      // analyzeCellQuality() never sets `overridden` (it has no notion of a
-      // human decision) - read it from the repository rather than trusting
-      // the cubit's own in-memory map, which would still be stale right
-      // after this exact cell's photo was just replaced (capturePhoto
-      // already reset the persisted flag by then; the in-memory map hasn't).
-      // This doesn't need [result] to already be persisted first — the flag
-      // lives independently of the quality record itself.
+
+      final latest = _repository.getWall(_floorId, _wallId)?.grid?.cells;
+      if (latest == null ||
+          cellIndex >= latest.length ||
+          !listEquals(latest[cellIndex].shotPaths, shotPaths)) {
+        return null;
+      }
+
+      // The analyzer never sets `overridden` (it has no notion of a human
+      // decision) - read it from the repository rather than trusting the
+      // cubit's own in-memory map, which would still be stale right after this
+      // exact cell's photo was just replaced (capturePhoto already reset the
+      // persisted flag by then; the in-memory map hasn't). This doesn't need
+      // [result] to already be persisted first — the flag lives independently
+      // of the quality record itself.
       final overridden = _repository.getCellQualityOverridden(_floorId, _wallId, cellIndex);
       final merged = result.withOverridden(overridden);
-      final afterAnalysis = state;
-      if (afterAnalysis is CaptureSessionLoaded) {
-        emit(
-          afterAnalysis.copyWith(
-            cellQuality: {...afterAnalysis.cellQuality, cellIndex: merged},
-            analyzingCellIds: {...afterAnalysis.analyzingCellIds}..remove(cellIndex),
-          ),
-        );
-      }
+      _updateLoaded(
+        (loaded) => loaded.copyWith(
+          cellQuality: {...loaded.cellQuality, cellIndex: merged},
+        ),
+      );
       return merged;
     } catch (error) {
       debugPrint('CaptureSessionCubit: quality analysis failed for cell $cellIndex: $error');
-      final afterFailure = state;
-      if (afterFailure is CaptureSessionLoaded) {
-        emit(
-          afterFailure.copyWith(
-            analyzingCellIds: {...afterFailure.analyzingCellIds}..remove(cellIndex),
-          ),
-        );
-      }
       return null;
+    } finally {
+      _scoringCell = null;
+      _emitAnalyzingCells();
     }
+  }
+
+  void _emitAnalyzingCells() {
+    final scoring = _scoringCell;
+    _updateLoaded(
+      (loaded) => loaded.copyWith(
+        analyzingCellIds: {..._queuedCells, if (scoring != null) scoring},
+      ),
+    );
+  }
+
+  /// Analysis outlives this cubit, and state can't be emitted after [close].
+  void _updateLoaded(CaptureSessionLoaded Function(CaptureSessionLoaded) update) {
+    final current = state;
+    if (!isClosed && current is CaptureSessionLoaded) emit(update(current));
   }
 
   /// Toggles the operator's "keep this shot anyway" decision for a

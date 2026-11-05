@@ -9,7 +9,9 @@ import '../../features/grid_capture/data/datasources/capture_session_local_data_
 import '../../features/grid_capture/data/datasources/grid_capture_local_data_source.dart';
 import '../../features/grid_capture/data/repositories/grid_capture_repository_impl.dart';
 import '../../features/grid_capture/domain/repositories/grid_capture_repository.dart';
+import '../../features/grid_capture/domain/services/capture_analyzer_isolate.dart';
 import '../../features/grid_capture/domain/services/capture_recovery_service.dart';
+import '../../features/grid_capture/domain/services/cell_quality_analyzer.dart';
 import '../../features/map_navigation/data/repositories/map_geometry_repository_impl.dart';
 import '../../features/map_navigation/domain/repositories/map_geometry_repository.dart';
 import '../../features/site_backup/domain/services/site_backup_service.dart';
@@ -153,6 +155,11 @@ void setupDependencies() {
   );
   GetIt.instance.registerLazySingleton<CameraPreferencesLocalDataSource>(
     () => CameraPreferencesLocalDataSource(),
+  );
+  // One worker isolate shared by every CaptureSessionCubit. SIFT must never
+  // run on the main isolate: see CaptureAnalyzerIsolate.
+  GetIt.instance.registerLazySingleton<CellQualityAnalyzer>(
+    () => CaptureAnalyzerIsolate(),
   );
   GetIt.instance.registerLazySingleton<GridCaptureRepository>(
     () => GridCaptureRepositoryImpl(

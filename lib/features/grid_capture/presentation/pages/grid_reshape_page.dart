@@ -11,6 +11,7 @@ import '../../../../core/widgets/feedback_states.dart';
 import '../../../../core/widgets/primary_action_button.dart';
 import '../../data/datasources/grid_capture_local_data_source.dart';
 import '../../domain/repositories/grid_capture_repository.dart';
+import '../../domain/services/cell_quality_analyzer.dart';
 import '../cubit/capture_session_cubit.dart';
 import '../cubit/capture_session_state.dart';
 import '../widgets/capture_screen_header.dart';
@@ -46,6 +47,7 @@ class GridReshapePage extends StatelessWidget {
       create: (_) => CaptureSessionCubit(
         GetIt.instance<GridCaptureRepository>(),
         GetIt.instance<GridCaptureLocalDataSource>(),
+        GetIt.instance<CellQualityAnalyzer>(),
       )..init(floorId, wallId),
       child: Scaffold(
         body: SafeArea(

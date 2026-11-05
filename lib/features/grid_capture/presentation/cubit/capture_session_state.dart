@@ -57,8 +57,8 @@ class CaptureSessionLoaded extends CaptureSessionState {
   /// [WallEntity]/[GridState] (see [GridCell]'s doc comment).
   final Map<int, CellQualityResult> cellQuality;
 
-  /// Cell indices [CaptureSessionCubit] currently has an analysis isolate
-  /// running for — drives the badge's "scoring…" state.
+  /// Cell indices [CaptureSessionCubit] is scoring or has queued for scoring.
+  /// Drives the badge's "scoring…" state.
   final Set<int> analyzingCellIds;
 
   GridState? get grid => wall.grid;

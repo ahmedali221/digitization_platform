@@ -1,62 +1,33 @@
+import 'dart:io';
 import 'dart:math' as math;
 
 import 'package:opencv_dart/opencv_dart.dart' as cv;
 
+import '../../../../core/vision/keypoint_matching.dart';
 import '../entities/capture_quality.dart';
 import 'capture_quality_config.dart';
+import 'cell_quality_analyzer.dart';
 
-/// One grid-adjacent cell that already has a captured photo, fed into
-/// [analyzeCellQuality] alongside the cell being scored.
-class NeighbourImageInput {
-  const NeighbourImageInput({
-    required this.direction,
-    required this.cellIndex,
-    required this.imagePath,
-  });
+export 'cell_quality_analyzer.dart' show CellQualityRequest, NeighbourImageInput;
 
-  final NeighbourDirection direction;
-  final int cellIndex;
-  final String imagePath;
-}
-
-/// Plain-data request for [analyzeCellQuality] — must stay free of any
-/// native handle (Mat, VecKeyPoint, ...) so it can cross the `compute()`
-/// isolate boundary the caller dispatches this through (see
-/// CaptureSessionCubit). [relevantEdges] is read from the grid, not
-/// guessed — a corner cell only needs 2 of its 4 edges scored.
-class CellQualityRequest {
-  const CellQualityRequest({
-    required this.cellIndex,
-    required this.imagePaths,
-    required this.relevantEdges,
-    this.neighbours = const [],
-    this.config = const CaptureQualityConfig(),
-  });
-
-  final int cellIndex;
-
-  /// Every shot captured for this cell so far — never empty. Each is scored
-  /// independently against [neighbours] and the highest-scoring one wins
-  /// (see [analyzeCellQuality]), so a cell with a bad first attempt and a
-  /// good retake isn't penalized for keeping both.
-  final List<String> imagePaths;
-  final Set<EdgeSide> relevantEdges;
-  final List<NeighbourImageInput> neighbours;
-  final CaptureQualityConfig config;
-}
-
-/// Runs Tier 1 (always) and Tier 2/3 (for every neighbour already
-/// captured), entirely inside whichever isolate the caller runs it in —
-/// this function itself has no Flutter dependency, so it's also directly
+/// Runs Tier 1 (always) and Tier 2/3 (for every neighbour already captured),
+/// entirely inside whichever isolate the caller runs it in. Blocks for seconds
+/// at a time, so the app calls it through `CaptureAnalyzerIsolate`, never from
+/// the main isolate. It has no Flutter dependency, so it's also directly
 /// reusable from a host-side (non-Flutter) validation script.
 ///
 /// Mirrors stitch.py's `Stitcher` (features/match_points/fit_transform/
-/// check_direction) using the same underlying OpenCV core via opencv_dart,
-/// so a mobile score stays numerically consistent with what the backend's
-/// own `--audit` would measure for the same photos — this is the single
-/// implementation the spec's "don't build a second SIFT system" rule asks
-/// for, not a second one that happens to agree today.
-CellQualityResult analyzeCellQuality(CellQualityRequest request) {
+/// check_direction) using the same underlying OpenCV core via opencv_dart, but
+/// on a bounded copy of each photo (see
+/// [CaptureQualityConfig.analysisMaxLongSide]). Keypoint and match counts are
+/// therefore lower than the backend's `--audit` for the same photos.
+///
+/// [cache] keeps features for the next call; without one, they last this call
+/// only. A cache must only ever be used with one [CaptureQualityConfig].
+CellQualityResult analyzeCellQuality(
+  CellQualityRequest request, {
+  ImageFeatureCache? cache,
+}) {
   final config = request.config;
   final sift = cv.SIFT.create(
     nfeatures: config.siftFeatures,
@@ -73,44 +44,12 @@ CellQualityResult analyzeCellQuality(CellQualityRequest request) {
     descriptorType: cv.MatType.CV_32F,
   );
   final matcher = cv.BFMatcher.create();
-  final disposables = <void Function()>[sift.dispose, matcher.dispose];
-  final featureCache = <String, _ImageFeatures>{};
+  final features = cache ?? ImageFeatureCache();
 
   try {
     _ImageFeatures featuresFor(String path) {
-      final cached = featureCache[path];
-      if (cached != null) return cached;
-
-      final img = cv.imread(path);
-      disposables.add(img.dispose);
-      if (img.rows == 0 || img.cols == 0) {
-        throw StateError('capture_analyzer: unreadable image at $path');
-      }
-      final gray = cv.cvtColor(img, cv.COLOR_BGR2GRAY);
-      disposables.add(gray.dispose);
-
-      final (keypoints, descriptors) = sift.detectAndCompute(gray, cv.Mat.empty());
-      disposables.add(keypoints.dispose);
-      disposables.add(descriptors.dispose);
-
-      final laplacian = cv.laplacian(gray, cv.MatType.CV_64F);
-      final sharpness = laplacian.variance().val1;
-      laplacian.dispose();
-      final (mean, stddev) = cv.meanStdDev(gray);
-      final contrast = stddev.val1;
-      mean.dispose();
-      stddev.dispose();
-
-      final features = _ImageFeatures(
-        keypoints: keypoints,
-        descriptors: descriptors,
-        width: img.cols,
-        height: img.rows,
-        sharpness: sharpness,
-        contrast: contrast,
-      );
-      featureCache[path] = features;
-      return features;
+      final key = _cacheKey(path);
+      return features._lookup(key) ?? features._store(key, _extractFeatures(path, sift, config));
     }
 
     if (request.imagePaths.isEmpty) {
@@ -133,16 +72,21 @@ CellQualityResult analyzeCellQuality(CellQualityRequest request) {
 
       final neighbours = <NeighbourMatchMetrics>[];
       for (final n in request.neighbours) {
-        final neighbourFeatures = featuresFor(n.imagePath);
+        final pairKey =
+            '${_cacheKey(candidatePath)}>${_cacheKey(n.imagePath)}|${n.direction.name}|${n.cellIndex}';
         neighbours.add(
-          _scoreNeighbour(
-            matcher: matcher,
-            self: self,
-            neighbour: neighbourFeatures,
-            direction: n.direction,
-            neighbourCellIndex: n.cellIndex,
-            config: config,
-          ),
+          features._lookupPair(pairKey) ??
+              features._storePair(
+                pairKey,
+                _scoreNeighbour(
+                  matcher: matcher,
+                  self: self,
+                  neighbour: featuresFor(n.imagePath),
+                  direction: n.direction,
+                  neighbourCellIndex: n.cellIndex,
+                  config: config,
+                ),
+              ),
         );
       }
 
@@ -185,9 +129,119 @@ CellQualityResult analyzeCellQuality(CellQualityRequest request) {
       allShotScores: allShotScores,
     );
   } finally {
-    for (final dispose in disposables) {
-      dispose();
+    sift.dispose();
+    matcher.dispose();
+    if (cache == null) features.dispose();
+  }
+}
+
+/// Includes size and modified time because a retake can land back on a deleted
+/// shot's path.
+String _cacheKey(String path) {
+  final stat = File(path).statSync();
+  return '$path|${stat.size}|${stat.modified.microsecondsSinceEpoch}';
+}
+
+/// Sharpness and contrast come from the full-size photo, because downscaling
+/// moves sharpness unpredictably (up on some photos, down on others) and its
+/// score anchors were set for full-size images. SIFT and everything built on
+/// its keypoints use the bounded copy: that cost is what freezes a phone
+/// otherwise, since SIFT doubles the image and brute-force matching is
+/// keypoints x keypoints.
+_ImageFeatures _extractFeatures(String path, cv.SIFT sift, CaptureQualityConfig config) {
+  final full = cv.imread(path, flags: cv.IMREAD_GRAYSCALE);
+  try {
+    if (full.rows == 0 || full.cols == 0) {
+      throw StateError('capture_analyzer: unreadable image at $path');
     }
+
+    final laplacian = cv.laplacian(full, cv.MatType.CV_64F);
+    final sharpness = laplacian.variance().val1;
+    laplacian.dispose();
+    final (mean, stddev) = cv.meanStdDev(full);
+    final contrast = stddev.val1;
+    mean.dispose();
+    stddev.dispose();
+
+    final scale = config.analysisMaxLongSide / math.max(full.rows, full.cols);
+    final bounded = scale < 1
+        ? cv.resize(full, (
+            (full.cols * scale).round(),
+            (full.rows * scale).round(),
+          ), interpolation: cv.INTER_AREA)
+        : full;
+    try {
+      final (keypoints, descriptors) = sift.detectAndCompute(bounded, cv.Mat.empty());
+      return _ImageFeatures(
+        keypoints: keypoints,
+        descriptors: descriptors,
+        width: bounded.cols,
+        height: bounded.rows,
+        sharpness: sharpness,
+        contrast: contrast,
+      );
+    } finally {
+      if (!identical(bounded, full)) bounded.dispose();
+    }
+  } finally {
+    full.dispose();
+  }
+}
+
+/// Features and match results already computed, so rescoring a cell only pays
+/// for what changed. A shot rescores every shot of its cell and its neighbours,
+/// and matching is the slow part: about 3 s per pair on a phone. Evicts the
+/// least recently used image past [capacity], and holds native memory until
+/// evicted or disposed.
+class ImageFeatureCache {
+  /// [capacity] must leave room for a cell's current shot plus its four
+  /// neighbours, which are all in use at once. Null means no limit.
+  ImageFeatureCache({this.capacity}) : assert(capacity == null || capacity >= 5);
+
+  /// Match results are small plain objects, so far more of them fit than
+  /// images: one image pairs with several others.
+  static const int _pairsPerImage = 8;
+
+  final int? capacity;
+  final Map<String, _ImageFeatures> _entries = {};
+  final Map<String, NeighbourMatchMetrics> _pairs = {};
+
+  NeighbourMatchMetrics? _lookupPair(String key) {
+    final found = _pairs.remove(key);
+    if (found != null) _pairs[key] = found;
+    return found;
+  }
+
+  NeighbourMatchMetrics _storePair(String key, NeighbourMatchMetrics metrics) {
+    _pairs[key] = metrics;
+    final limit = capacity;
+    while (limit != null && _pairs.length > limit * _pairsPerImage) {
+      _pairs.remove(_pairs.keys.first);
+    }
+    return metrics;
+  }
+
+  _ImageFeatures? _lookup(String key) {
+    final found = _entries.remove(key);
+    if (found != null) _entries[key] = found;
+    return found;
+  }
+
+  _ImageFeatures _store(String key, _ImageFeatures features) {
+    _entries[key] = features;
+    final limit = capacity;
+    while (limit != null && _entries.length > limit) {
+      _entries.remove(_entries.keys.first)!.dispose();
+    }
+    return features;
+  }
+
+  void dispose() {
+    for (final features in _entries.values) {
+      features.dispose();
+    }
+    _entries.clear();
+    _pairs.clear();
   }
 }
 
@@ -203,10 +257,19 @@ class _ImageFeatures {
 
   final cv.VecKeyPoint keypoints;
   final cv.Mat descriptors;
+
+  /// Of the bounded copy, the same coordinates as [keypoints].
   final int width;
   final int height;
+
+  /// Of the full-size photo.
   final double sharpness;
   final double contrast;
+
+  void dispose() {
+    keypoints.dispose();
+    descriptors.dispose();
+  }
 }
 
 /// A fitted 3x3 transform as plain scalars (never a native Mat) — extracted
@@ -331,22 +394,14 @@ ImageQualityMetrics _scoreImage(
   required _ImageFeatures from,
   required _ImageFeatures to,
   required double ratio,
-}) {
-  final knn = matcher.knnMatch(from.descriptors, to.descriptors, 2);
-  final src = <cv.Point2f>[];
-  final dst = <cv.Point2f>[];
-  for (final pair in knn) {
-    if (pair.length == 2 && pair[0].distance < ratio * pair[1].distance) {
-      final m = pair[0];
-      final fromKp = from.keypoints[m.queryIdx];
-      final toKp = to.keypoints[m.trainIdx];
-      src.add(cv.Point2f(fromKp.x, fromKp.y));
-      dst.add(cv.Point2f(toKp.x, toKp.y));
-    }
-  }
-  knn.dispose();
-  return (src: src, dst: dst, goodCount: src.length);
-}
+}) => matchKeypoints(
+  matcher: matcher,
+  fromKeypoints: from.keypoints,
+  fromDescriptors: from.descriptors,
+  toKeypoints: to.keypoints,
+  toDescriptors: to.descriptors,
+  ratio: ratio,
+);
 
 /// Fits src->dst per [CaptureQualityConfig.transformModel], RANSAC-filtered
 /// — mirrors `Stitcher.fit_transform`. Returns null when OpenCV can't fit

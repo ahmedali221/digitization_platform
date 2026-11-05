@@ -14,6 +14,7 @@ import 'dart:io';
 
 import 'package:digitization_platform/features/grid_capture/domain/entities/capture_quality.dart';
 import 'package:digitization_platform/features/grid_capture/domain/services/capture_analyzer.dart';
+import 'package:digitization_platform/features/grid_capture/domain/services/capture_quality_config.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:opencv_dart/opencv_dart.dart' as cv;
 import 'package:path/path.dart' as p;
@@ -89,5 +90,109 @@ void main() {
     );
 
     expect(result.image.imageScore, greaterThan(0));
+  });
+
+  group('cost limits', () {
+    /// A dense random texture, the worst case for keypoint count.
+    String writeTexture(String name, int rows, int cols) {
+      final noise = cv.Mat.randu(rows, cols, cv.MatType.CV_8UC1, high: cv.Scalar.all(256));
+      final blurred = cv.gaussianBlur(noise, (0, 0), 1.6);
+      noise.dispose();
+      return writeImage(name, blurred);
+    }
+
+    test('an oversized photo is bounded in size and keypoints', () {
+      const config = CaptureQualityConfig(analysisMaxLongSide: 400, siftFeatures: 300);
+      final path = writeTexture('oversized.png', 900, 1200);
+
+      final result = analyzeCellQuality(
+        CellQualityRequest(cellIndex: 0, imagePaths: [path], relevantEdges: const {}, config: config),
+      );
+
+      // SIFT can keep a few extra when strengths tie at the cut-off.
+      expect(result.image.keypointCount, inInclusiveRange(1, 310));
+      // Per megapixel of the 400x300 copy, not of the 1200x900 original.
+      expect(result.image.keypointDensity, closeTo(result.image.keypointCount / 0.12, 0.001));
+    });
+
+    test('sharpness and contrast are read at full size', () {
+      final path = writeTexture('sharp.png', 900, 1200);
+      final full = analyzeCellQuality(
+        CellQualityRequest(
+          cellIndex: 0,
+          imagePaths: [path],
+          relevantEdges: const {},
+          config: const CaptureQualityConfig(analysisMaxLongSide: 5000),
+        ),
+      );
+
+      final bounded = analyzeCellQuality(
+        CellQualityRequest(
+          cellIndex: 0,
+          imagePaths: [path],
+          relevantEdges: const {},
+          config: const CaptureQualityConfig(analysisMaxLongSide: 400),
+        ),
+      );
+
+      expect(bounded.image.sharpness, full.image.sharpness);
+      expect(bounded.image.contrast, full.image.contrast);
+    });
+
+    test('a cache reuses features and notices a replaced file', () {
+      final cache = ImageFeatureCache(capacity: 5);
+      addTearDown(cache.dispose);
+      final path = writeTexture('cached.png', 300, 400);
+      CellQualityResult run() => analyzeCellQuality(
+        CellQualityRequest(cellIndex: 0, imagePaths: [path], relevantEdges: const {}),
+        cache: cache,
+      );
+
+      final first = run();
+      expect(run().image.keypointCount, first.image.keypointCount);
+
+      // A retake can land back on a deleted shot's path.
+      final replacement = cv.Mat.zeros(300, 400, cv.MatType.CV_8UC3);
+      cv.imwrite(path, replacement);
+      replacement.dispose();
+      File(path).setLastModifiedSync(DateTime.now().add(const Duration(minutes: 1)));
+
+      expect(run().image.keypointCount, 0);
+    });
+
+    test('a cache gives the same neighbour result as computing it again', () {
+      final cache = ImageFeatureCache(capacity: 5);
+      addTearDown(cache.dispose);
+      final self = writeTexture('pair_self.png', 300, 400);
+      final neighbour = writeTexture('pair_neighbour.png', 300, 400);
+      final request = CellQualityRequest(
+        cellIndex: 0,
+        imagePaths: [self],
+        relevantEdges: const {},
+        neighbours: [
+          NeighbourImageInput(direction: NeighbourDirection.right, cellIndex: 1, imagePath: neighbour),
+        ],
+      );
+
+      final uncached = analyzeCellQuality(request);
+      final first = analyzeCellQuality(request, cache: cache);
+      final second = analyzeCellQuality(request, cache: cache);
+
+      expect(first.neighbours, uncached.neighbours);
+      expect(second.neighbours, uncached.neighbours);
+    });
+
+    test('a cache keeps working past its capacity', () {
+      final cache = ImageFeatureCache(capacity: 5);
+      addTearDown(cache.dispose);
+      final paths = [for (var i = 0; i < 8; i++) writeTexture('evict_$i.png', 200, 300)];
+
+      final result = analyzeCellQuality(
+        CellQualityRequest(cellIndex: 0, imagePaths: paths, relevantEdges: const {}),
+        cache: cache,
+      );
+
+      expect(result.allShotScores, hasLength(8));
+    });
   });
 }
