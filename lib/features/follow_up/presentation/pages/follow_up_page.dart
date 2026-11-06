@@ -11,6 +11,8 @@ import '../../../../core/widgets/primary_action_button.dart';
 import '../../../../core/widgets/thin_progress_bar.dart';
 import '../../data/models/follow_up_upload_record.dart';
 import '../../domain/entities/follow_up_package.dart';
+import '../../domain/entities/follow_up_uploads.dart';
+import '../../domain/entities/target_width.dart';
 import '../../domain/repositories/follow_up_repository.dart';
 import '../cubit/follow_up_cubit.dart';
 import '../cubit/follow_up_state.dart';
@@ -133,6 +135,45 @@ class _PackageBanner extends StatelessWidget {
   }
 }
 
+/// What's left and what's finished, of one list. Which of the two is showing is
+/// only for here, so it starts on what's left each time the tab is opened.
+class _ToDoOrDone extends StatefulWidget {
+  const _ToDoOrDone({required this.toDo, required this.done, required this.builder});
+
+  final int toDo;
+  final int done;
+  final Widget Function(BuildContext context, bool showingDone) builder;
+
+  @override
+  State<_ToDoOrDone> createState() => _ToDoOrDoneState();
+}
+
+class _ToDoOrDoneState extends State<_ToDoOrDone> {
+  bool _showingDone = false;
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Padding(
+          padding: const EdgeInsets.fromLTRB(AppSpacing.lg, AppSpacing.lg, AppSpacing.lg, 0),
+          child: SegmentedButton<bool>(
+            showSelectedIcon: false,
+            segments: [
+              ButtonSegment(value: false, label: Text('To do (${widget.toDo})')),
+              ButtonSegment(value: true, label: Text('Done (${widget.done})')),
+            ],
+            selected: {_showingDone},
+            onSelectionChanged: (selection) => setState(() => _showingDone = selection.first),
+          ),
+        ),
+        Expanded(child: widget.builder(context, _showingDone)),
+      ],
+    );
+  }
+}
+
 class _AnnotationList extends StatelessWidget {
   const _AnnotationList({required this.package});
 
@@ -144,22 +185,52 @@ class _AnnotationList extends StatelessWidget {
       return const EmptyState(icon: Icons.check_circle_outline, message: 'No annotations in this package.');
     }
     final cubit = context.read<FollowUpCubit>();
-    return ListView.separated(
-      padding: const EdgeInsets.all(AppSpacing.lg),
-      itemCount: package.annotations.length,
-      separatorBuilder: (_, _) => const SizedBox(height: AppSpacing.sm),
-      itemBuilder: (context, index) {
-        final annotation = package.annotations[index];
-        final upload = cubit.latestFor(FollowUpUploadRecord.kindAnnotation, annotation.id.toString());
-        return _ItemCard(
-          title: annotation.referenceCode,
-          subtitle: '${annotation.wall.name} · ${annotation.grade ?? 'not checked'}',
-          upload: upload,
-          onTap: () => _open(context, AnnotationTaskPage(package: package, annotation: annotation)),
+    final uploads = cubit.state.uploads;
+    final done = package.annotations.where((annotation) => annotationIsDone(package, annotation, uploads)).toList();
+    final toDo = package.annotations.where((annotation) => !done.contains(annotation)).toList();
+
+    return _ToDoOrDone(
+      toDo: toDo.length,
+      done: done.length,
+      builder: (context, showingDone) {
+        final shown = showingDone ? done : toDo;
+        if (shown.isEmpty) {
+          return EmptyState(
+            icon: Icons.check_circle_outline,
+            message: showingDone ? 'None finished yet.' : 'All of these are finished.',
+          );
+        }
+        return ListView.separated(
+          padding: const EdgeInsets.all(AppSpacing.lg),
+          itemCount: shown.length,
+          separatorBuilder: (_, _) => const SizedBox(height: AppSpacing.sm),
+          itemBuilder: (context, index) {
+            final annotation = shown[index];
+            final upload = cubit.latestFor(FollowUpUploadRecord.kindAnnotation, annotation.id.toString());
+            return _ItemCard(
+              title: annotation.referenceCode,
+              subtitle: '${annotation.wall.name} · ${annotation.grade ?? 'not checked'}',
+              upload: upload,
+              onTap: () => _open(context, AnnotationTaskPage(package: package, annotation: annotation)),
+            );
+          },
         );
       },
     );
   }
+}
+
+/// How a target's video stands, when that isn't simply finished.
+String? _videoStatusLabel(String? status) {
+  if (status != null && status.startsWith('awaiting_')) return 'Video in progress';
+  return switch (status) {
+    'no_video' => 'No video yet',
+    'processing' => 'Video in progress',
+    'pending_review' || 'ready' => 'Video in review',
+    'rejected' => 'Video rejected',
+    'failed' => 'Video failed',
+    _ => null,
+  };
 }
 
 class _TargetList extends StatelessWidget {
@@ -175,13 +246,70 @@ class _TargetList extends StatelessWidget {
     final repository = GetIt.instance<FollowUpRepository>();
     final cubit = context.read<FollowUpCubit>();
 
-    final walls = <String, List<FollowUpTarget>>{};
-    for (final target in package.targets) {
-      walls.putIfAbsent(target.wall.name, () => []).add(target);
-    }
+    final uploads = cubit.state.uploads;
+    final done = package.targets.where((target) => targetIsDone(package, target, uploads)).toList();
+    final toDo = package.targets.where((target) => !done.contains(target)).toList();
 
-    return CustomScrollView(
+    double? widthOf(FollowUpTarget target) => currentTargetWidth(
+      target,
+      uploads,
+      packageCreatedAt: package.createdAt,
+    );
+    final missingWidths = package.targets.where((target) => widthOf(target) == null).length;
+    final turnedDown = turnedDownPhotos(package, uploads);
+
+    Widget listOf(BuildContext context, bool showingDone) {
+      final shown = showingDone ? done : toDo;
+      final walls = <String, List<FollowUpTarget>>{};
+      for (final target in shown) {
+        // Together, not one heading each: the studio's labels are nearly always all different.
+        walls.putIfAbsent(target.wall?.name ?? _notInAGroup, () => []).add(target);
+      }
+
+      return CustomScrollView(
       slivers: [
+        if (shown.isEmpty)
+          SliverFillRemaining(
+            hasScrollBody: false,
+            child: EmptyState(
+              icon: Icons.check_circle_outline,
+              message: showingDone ? 'None finished yet.' : 'All of these are finished.',
+            ),
+          ),
+        if (!showingDone && turnedDown > 0)
+          SliverToBoxAdapter(
+            child: Container(
+              margin: const EdgeInsets.fromLTRB(AppSpacing.lg, AppSpacing.lg, AppSpacing.lg, 0),
+              padding: const EdgeInsets.all(AppSpacing.md),
+              decoration: BoxDecoration(
+                color: AppColors.dangerContainer,
+                borderRadius: BorderRadius.circular(AppRadius.chip),
+              ),
+              child: Text(
+                turnedDown == 1
+                    ? '1 photograph was refused. Open its target to see why.'
+                    : '$turnedDown photographs were refused. Open their targets to see why.',
+                style: Theme.of(context).textTheme.bodySmall?.copyWith(color: AppColors.onDangerContainer),
+              ),
+            ),
+          ),
+        if (!showingDone && missingWidths > 0)
+          SliverToBoxAdapter(
+            child: Container(
+              margin: const EdgeInsets.fromLTRB(AppSpacing.lg, AppSpacing.lg, AppSpacing.lg, 0),
+              padding: const EdgeInsets.all(AppSpacing.md),
+              decoration: BoxDecoration(
+                color: AppColors.warningContainer,
+                borderRadius: BorderRadius.circular(AppRadius.chip),
+              ),
+              child: Text(
+                missingWidths == 1
+                    ? '1 target has no width yet. Open it to measure it.'
+                    : '$missingWidths targets have no width yet. Open one to measure it.',
+                style: Theme.of(context).textTheme.bodySmall?.copyWith(color: AppColors.onWarningContainer),
+              ),
+            ),
+          ),
         for (final wall in walls.entries) ...[
           SliverToBoxAdapter(
             child: Padding(
@@ -201,6 +329,7 @@ class _TargetList extends StatelessWidget {
                     target: target,
                     imagePath: repository.filePath(package.siteId, target.imageKey),
                     upload: cubit.latestFor(FollowUpUploadRecord.kindTarget, target.arKey),
+                    width: widthOf(target),
                     onTap: () => _open(context, TargetDetailPage(package: package, target: target)),
                   ),
               ],
@@ -209,9 +338,14 @@ class _TargetList extends StatelessWidget {
         ],
         const SliverToBoxAdapter(child: SizedBox(height: AppSpacing.xl)),
       ],
-    );
+      );
+    }
+
+    return _ToDoOrDone(toDo: toDo.length, done: done.length, builder: listOf);
   }
 }
+
+const _notInAGroup = 'Not in an AR group yet';
 
 /// Details and the capture flow live on their own routes; coming back from one
 /// is when a new upload appears.
@@ -272,17 +406,25 @@ class _ItemCard extends StatelessWidget {
 }
 
 class _TargetTile extends StatelessWidget {
-  const _TargetTile({required this.target, required this.imagePath, required this.upload, required this.onTap});
+  const _TargetTile({
+    required this.target,
+    required this.imagePath,
+    required this.upload,
+    required this.width,
+    required this.onTap,
+  });
 
   static const int _thumbnailWidth = 400;
 
   final FollowUpTarget target;
   final Future<String> imagePath;
   final FollowUpUploadRecord? upload;
+  final double? width;
   final VoidCallback onTap;
 
   @override
   Widget build(BuildContext context) {
+    final labelStyle = Theme.of(context).textTheme.labelSmall;
     return InkWell(
       onTap: onTap,
       borderRadius: BorderRadius.circular(AppRadius.chip),
@@ -312,8 +454,27 @@ class _TargetTile extends StatelessWidget {
                       target.label,
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
-                      style: Theme.of(context).textTheme.labelSmall?.copyWith(color: Colors.white),
+                      style: labelStyle?.copyWith(color: Colors.white),
                     ),
+                    if (_videoStatusLabel(target.videoStatus) != null)
+                      Text(
+                        _videoStatusLabel(target.videoStatus)!,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: labelStyle?.copyWith(color: Colors.white70),
+                      ),
+                    if (width != null)
+                      Text(TargetWidth.format(width!), style: labelStyle?.copyWith(color: Colors.white))
+                    else
+                      Container(
+                        margin: const EdgeInsets.symmetric(vertical: 2),
+                        padding: const EdgeInsets.symmetric(horizontal: AppSpacing.xs),
+                        decoration: BoxDecoration(
+                          color: AppColors.warningContainer,
+                          borderRadius: BorderRadius.circular(AppRadius.chip),
+                        ),
+                        child: Text('Width missing', style: labelStyle?.copyWith(color: AppColors.onWarningContainer)),
+                      ),
                     if (upload != null) UploadStatusChip(upload: upload!),
                   ],
                 ),
@@ -355,6 +516,9 @@ class _UploadRow extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final detail = [
+      if (upload.physicalWidthM != null)
+        'Width ${TargetWidth.format(upload.physicalWidthM!)}'
+            '${upload.widthSource == TargetWidth.sourceAr ? ', measured with AR' : ', typed'}',
       if (upload.rejectReason != null) upload.rejectReason!,
       ...upload.reasons,
       if (upload.status == FollowUpUploadRecord.statusFailed && upload.lastError != null) upload.lastError!,
@@ -372,7 +536,12 @@ class _UploadRow extends StatelessWidget {
           Row(
             children: [
               Icon(
-                upload.kind == FollowUpUploadRecord.kindTarget ? Icons.center_focus_strong : Icons.text_snippet_outlined,
+                switch (upload.kind) {
+                  FollowUpUploadRecord.kindTarget => Icons.center_focus_strong,
+                  FollowUpUploadRecord.kindWidth => Icons.straighten,
+                  FollowUpUploadRecord.kindAnnotationGrid => Icons.grid_on,
+                  _ => Icons.text_snippet_outlined,
+                },
                 size: 18,
                 color: AppColors.iconMuted,
               ),

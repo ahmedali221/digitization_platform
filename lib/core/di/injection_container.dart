@@ -214,6 +214,10 @@ void setupDependencies() {
       local: GetIt.instance<FollowUpLocalDataSource>(),
       remote: GetIt.instance<FollowUpRemoteDataSource>(),
       resolveFile: GetIt.instance<DirectoryManager>().resolveExistingFile,
+      stitchedPreviewPath: (record) async => FollowUpRepositoryImpl.stitchedPreviewPath(
+        await GetIt.instance<DirectoryManager>().followUpDir(record.siteId, FollowUpRepositoryImpl.previewsFolder),
+        record.token,
+      ),
     ),
   );
   GetIt.instance.registerLazySingleton<FollowUpRepository>(

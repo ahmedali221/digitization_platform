@@ -1,3 +1,4 @@
+import ARKit
 import AVFoundation
 import Flutter
 import MediaPlayer
@@ -23,6 +24,7 @@ import UIKit
 @objc class AppDelegate: FlutterAppDelegate {
   private let channelName = "nilelens/capture_button"
   private let lensInfoChannelName = "nilelens/lens_info"
+  private let arMeasureChannelName = "nilelens/ar_measure"
   private var methodChannel: FlutterMethodChannel?
 
   private var captureButtonArmed = false
@@ -62,6 +64,37 @@ import UIKit
           return
         }
         result(self?.resolveBackLensRoles())
+      }
+
+      let arMeasureChannel = FlutterMethodChannel(
+        name: arMeasureChannelName,
+        binaryMessenger: controller.binaryMessenger
+      )
+      arMeasureChannel.setMethodCallHandler { [weak controller] call, result in
+        switch call.method {
+        case "isSupported":
+          result(ARWorldTrackingConfiguration.isSupported)
+        case "measure":
+          guard let controller = controller, ARWorldTrackingConfiguration.isSupported else {
+            result(["status": "unavailable", "reason": "This phone doesn't support AR."])
+            return
+          }
+          controller.present(
+            ArMeasureViewController { outcome in
+              switch outcome {
+              case .measured(let meters):
+                result(["status": "measured", "meters": meters])
+              case .cancelled:
+                result(["status": "cancelled"])
+              case .unavailable(let reason):
+                result(["status": "unavailable", "reason": reason])
+              }
+            },
+            animated: true
+          )
+        default:
+          result(FlutterMethodNotImplemented)
+        }
       }
     }
 

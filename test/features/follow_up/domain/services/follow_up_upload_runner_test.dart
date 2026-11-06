@@ -26,6 +26,7 @@ class _FakeLocal implements FollowUpLocalDataSource {
 
 class _FakeRemote implements FollowUpRemoteDataSource {
   final List<String> uploaded = [];
+  final List<String> widthsUploaded = [];
   final Map<String, Object> failures = {};
   List<Map<String, dynamic>> answers = [];
   Future<void>? hold;
@@ -40,6 +41,55 @@ class _FakeRemote implements FollowUpRemoteDataSource {
     final failure = failures[record.token];
     if (failure != null) throw failure;
     uploaded.add(record.token);
+  }
+
+  @override
+  Future<void> uploadWidth(FollowUpUploadRecord record) async {
+    final failure = failures[record.token];
+    if (failure != null) throw failure;
+    widthsUploaded.add(record.token);
+  }
+
+  final List<String> gridsRegistered = [];
+  final List<String> tilesSent = [];
+  Object? tileFailure;
+  int tilesBeforeFailure = 0;
+  Map<String, dynamic> decisionAnswer = const {};
+  final List<bool> decisions = [];
+  final List<String> previewsAsked = [];
+  Object? previewFailure;
+
+  @override
+  Future<void> registerGrid(FollowUpUploadRecord record) async {
+    final failure = failures[record.token];
+    if (failure != null) throw failure;
+    gridsRegistered.add(record.token);
+  }
+
+  @override
+  Future<void> uploadGridTile(
+    String token,
+    GridTile tile, {
+    required Stream<List<int>> Function() openBytes,
+    required int length,
+  }) async {
+    if (tileFailure != null && tilesSent.length >= tilesBeforeFailure) throw tileFailure!;
+    tilesSent.add('r${tile.row}c${tile.col}');
+  }
+
+  @override
+  Future<Map<String, dynamic>> decideGrid(String token, {required bool use}) async {
+    final failure = failures[token];
+    if (failure != null) throw failure;
+    decisions.add(use);
+    return decisionAnswer;
+  }
+
+  @override
+  Future<void> downloadGridPreview(String token, String savePath) async {
+    previewsAsked.add(token);
+    if (previewFailure != null) throw previewFailure!;
+    File(savePath).writeAsStringSync('stitched');
   }
 
   @override
@@ -69,6 +119,31 @@ void main() {
 
   tearDown(() => folder.deleteSync(recursive: true));
 
+  FollowUpUploadRecord queuedGrid(String token, {List<(int, int)> cells = const [(0, 0), (0, 1), (0, 2)]}) {
+    final record = FollowUpUploadRecord(
+      token: token,
+      kind: FollowUpUploadRecord.kindAnnotationGrid,
+      siteId: '1',
+      packageId: 1,
+      itemKey: '5',
+      label: 'W-1',
+      filePath: '',
+      sha256: '',
+      capturedAt: DateTime(2026),
+      createdAt: DateTime(2026),
+      rows: 1,
+      cols: cells.length,
+    )..tiles = [
+      for (final (row, col) in cells)
+        GridTile(row: row, col: col, path: p.join(folder.path, '${token}_r${row}c$col.jpg'), sha256: 'abc'),
+    ];
+    for (final tile in record.tiles) {
+      File(tile.path).writeAsStringSync('photo');
+    }
+    local.records[token] = record;
+    return record;
+  }
+
   FollowUpUploadRecord queued(String token, {bool withFile = true}) {
     final path = p.join(folder.path, '$token.jpg');
     if (withFile) File(path).writeAsStringSync('photo');
@@ -87,6 +162,80 @@ void main() {
     local.records[token] = record;
     return record;
   }
+
+  FollowUpUploadRecord queuedWidth(String token) {
+    final record = FollowUpUploadRecord(
+      token: token,
+      kind: FollowUpUploadRecord.kindWidth,
+      siteId: '1',
+      packageId: 1,
+      itemKey: 'abcdefghij',
+      label: 'Wall-1',
+      filePath: '',
+      sha256: '',
+      capturedAt: DateTime(2026),
+      createdAt: DateTime(2026),
+      physicalWidthM: 1.42,
+      widthSource: 'ar',
+    );
+    local.records[token] = record;
+    return record;
+  }
+
+  test('a width goes with no file to look for', () async {
+    final record = queuedWidth('w');
+
+    await runner.drainAll();
+
+    expect(remote.widthsUploaded, ['w']);
+    expect(remote.uploaded, isEmpty);
+    expect(record.status, FollowUpUploadRecord.statusSent);
+  });
+
+  test('a width refused because the image changed since says why and is not retried', () async {
+    final record = queuedWidth('w');
+    remote.failures['w'] = const AppException(ServerFailure(409, 'Measure it again.'));
+
+    await runner.drainAll();
+    await runner.drainAll();
+
+    expect(record.status, FollowUpUploadRecord.statusFailed);
+    expect(record.lastError, 'Measure it again.');
+    expect(record.attempts, 1);
+  });
+
+  test('a width with no connection waits, and goes on the next drain', () async {
+    final record = queuedWidth('w');
+    remote.failures['w'] = const AppException(NetworkFailure());
+
+    await runner.drainAll();
+    expect(record.status, FollowUpUploadRecord.statusQueued);
+
+    remote.failures.clear();
+    await runner.drainAll();
+    expect(record.status, FollowUpUploadRecord.statusSent);
+  });
+
+  test('a width settling has no file to clean up', () async {
+    final record = queuedWidth('w');
+    var looked = false;
+    final watching = FollowUpUploadRunner(
+      local: local,
+      remote: remote,
+      resolveFile: (path) async {
+        looked = true;
+        return null;
+      },
+    );
+    remote.answers = [
+      {'token': 'w', 'status': 'pushed'},
+    ];
+
+    await watching.drainAll();
+
+    expect(record.serverStatus, 'pushed');
+    expect(looked, isFalse);
+  });
 
   test('sends what is queued and marks it sent', () async {
     final record = queued('a');
@@ -232,6 +381,106 @@ void main() {
     expect(File(record.filePath).existsSync(), isFalse);
   });
 
+  test('a photograph waiting at the studio is kept and asked about again', () async {
+    final record = queued('a');
+    remote.answers = [
+      {'token': 'a', 'status': 'pushed'},
+    ];
+
+    await runner.drainAll();
+    expect(record.serverStatus, 'pushed');
+    expect(File(record.filePath).existsSync(), isTrue);
+
+    remote.answers = [
+      {'token': 'a', 'status': 'studio_approved'},
+    ];
+    await runner.refreshResults();
+
+    expect(record.serverStatus, 'studio_approved');
+    expect(File(record.filePath).existsSync(), isFalse);
+  });
+
+  test('a photograph turned down at any stage is final, with the reason', () async {
+    for (final status in ['refused', 'studio_rejected']) {
+      local.records.clear();
+      final record = queued('a');
+      remote.answers = [
+        {'token': 'a', 'status': status, 'reject_reason': 'Another was chosen.'},
+      ];
+
+      await runner.drainAll();
+
+      expect(record.rejectReason, 'Another was chosen.', reason: status);
+      expect(File(record.filePath).existsSync(), isFalse, reason: status);
+    }
+  });
+
+  test('deleting a finished photograph leaves its small copy to show', () async {
+    final path = p.join(folder.path, 'a.jpg');
+    final preview = p.join(folder.path, 'a-preview.jpg');
+    File(path).writeAsStringSync('photo');
+    File(preview).writeAsStringSync('small');
+    local.records['a'] = FollowUpUploadRecord(
+      token: 'a',
+      kind: FollowUpUploadRecord.kindTarget,
+      siteId: '1',
+      packageId: 1,
+      itemKey: 'abcdefghij',
+      label: 'Wall-1',
+      filePath: path,
+      sha256: 'abc',
+      capturedAt: DateTime(2026),
+      createdAt: DateTime(2026),
+      previewPath: preview,
+    );
+    remote.answers = [
+      {'token': 'a', 'status': 'studio_approved'},
+    ];
+
+    await runner.drainAll();
+
+    expect(File(path).existsSync(), isFalse);
+    expect(File(preview).existsSync(), isTrue);
+  });
+
+  test('a width the studio is holding goes on being asked about, and one it took stops', () async {
+    final record = queuedWidth('w');
+    remote.answers = [
+      {'token': 'w', 'status': 'held'},
+    ];
+    await runner.drainAll();
+    expect(record.serverStatus, 'held');
+
+    remote.answers = [
+      {'token': 'w', 'status': 'pushed'},
+    ];
+    await runner.refreshResults();
+    expect(record.serverStatus, 'pushed');
+
+    remote.answers = [
+      {'token': 'w', 'status': 'held'},
+    ];
+    await runner.refreshResults();
+    expect(record.serverStatus, 'pushed');
+  });
+
+  test('every open screen hears about a change', () async {
+    var first = 0;
+    var second = 0;
+    void listenFirst() => first++;
+    void listenSecond() => second++;
+    runner.changes.addListener(listenFirst);
+    runner.changes.addListener(listenSecond);
+    queued('a');
+
+    await runner.drainAll();
+
+    expect(first, greaterThan(0));
+    expect(second, first);
+    runner.changes.removeListener(listenFirst);
+    runner.changes.removeListener(listenSecond);
+  });
+
   test('a results call that fails loses nothing and is asked again', () async {
     final record = queued('a')
       ..status = FollowUpUploadRecord.statusSent
@@ -247,6 +496,215 @@ void main() {
 
     expect(record.serverStatus, 'checking');
     expect(File(record.filePath).existsSync(), isTrue);
+  });
+
+  group('a grid', () {
+    late FollowUpUploadRunner gridRunner;
+
+    setUp(() {
+      gridRunner = FollowUpUploadRunner(
+        local: local,
+        remote: remote,
+        resolveFile: (path) async => await File(path).exists() ? File(path) : null,
+        stitchedPreviewPath: (record) async =>
+            p.join(folder.path, '${record.token}${FollowUpUploadRecord.stitchedPreviewSuffix}'),
+      );
+    });
+
+    test('is announced, then sent one photograph at a time, each deleted once it lands', () async {
+      final grid = queuedGrid('g');
+      final paths = grid.tiles.map((tile) => tile.path).toList();
+
+      await gridRunner.drainAll();
+
+      expect(remote.gridsRegistered, ['g']);
+      expect(remote.tilesSent, ['r0c0', 'r0c1', 'r0c2']);
+      expect(grid.status, FollowUpUploadRecord.statusSent);
+      expect(grid.tiles.every((tile) => tile.sent), isTrue);
+      expect(paths.any((path) => File(path).existsSync()), isFalse);
+    });
+
+    test('a dropped connection costs only what had not landed, and resumes there', () async {
+      final grid = queuedGrid('g');
+      remote
+        ..tileFailure = const AppException(NetworkFailure())
+        ..tilesBeforeFailure = 1;
+
+      await gridRunner.drainAll();
+
+      expect(grid.status, FollowUpUploadRecord.statusQueued);
+      expect(grid.tiles.map((tile) => tile.sent), [true, false, false]);
+      expect(File(grid.tiles[0].path).existsSync(), isFalse);
+      expect(File(grid.tiles[1].path).existsSync(), isTrue);
+
+      remote.tileFailure = null;
+      await gridRunner.drainAll();
+
+      expect(remote.tilesSent, ['r0c0', 'r0c1', 'r0c2']);
+      expect(remote.gridsRegistered, ['g', 'g'], reason: 'announcing again is answered from the first');
+      expect(grid.status, FollowUpUploadRecord.statusSent);
+    });
+
+    test('a photograph that arrived damaged is sent again, and nothing else is', () async {
+      final grid = queuedGrid('g');
+      remote
+        ..tileFailure = const AppException(ServerFailure(400, 'The file arrived different.'))
+        ..tilesBeforeFailure = 2;
+
+      await gridRunner.drainAll();
+      expect(grid.status, FollowUpUploadRecord.statusQueued);
+
+      remote.tileFailure = null;
+      await gridRunner.drainAll();
+
+      expect(remote.tilesSent, ['r0c0', 'r0c1', 'r0c2']);
+    });
+
+    test('a refused one stops and says why', () async {
+      final grid = queuedGrid('g');
+      remote.failures['g'] = const AppException(ServerFailure(409, 'This wall is archived.'));
+
+      await gridRunner.drainAll();
+
+      expect(grid.status, FollowUpUploadRecord.statusFailed);
+      expect(grid.lastError, 'This wall is archived.');
+      expect(remote.tilesSent, isEmpty);
+    });
+
+    test('with an unsent photograph gone from the phone, it asks for a retake', () async {
+      final grid = queuedGrid('g');
+      File(grid.tiles[1].path).deleteSync();
+
+      await gridRunner.drainAll();
+
+      expect(grid.status, FollowUpUploadRecord.statusFailed);
+      expect(remote.gridsRegistered, isEmpty);
+    });
+
+    test('goes on being asked about while stitching and while waiting for a choice', () async {
+      final grid = queuedGrid('g');
+      await gridRunner.drainAll();
+
+      for (final status in ['stitching', 'needs_decision']) {
+        remote.answers = [
+          {'token': 'g', 'status': status, 'failed_cells': const []},
+        ];
+        await gridRunner.refreshResults();
+        expect(grid.serverStatus, status);
+      }
+
+      remote.answers = [
+        {'token': 'g', 'status': 'stitch_failed', 'reject_reason': 'Retake them.'},
+      ];
+      await gridRunner.refreshResults();
+      expect(grid.rejectReason, 'Retake them.');
+
+      remote.answers = [
+        {'token': 'g', 'status': 'needs_decision'},
+      ];
+      await gridRunner.refreshResults();
+      expect(grid.serverStatus, 'stitch_failed', reason: 'that was final');
+    });
+
+    test('remembers which cells did not join', () async {
+      final grid = queuedGrid('g');
+      await gridRunner.drainAll();
+
+      remote.answers = [
+        {
+          'token': 'g',
+          'status': 'needs_decision',
+          'failed_cells': [
+            {'row': 0, 'col': 2, 'reason': 'too few matches'},
+          ],
+        },
+      ];
+      await gridRunner.refreshResults();
+
+      expect(grid.failedCells.single, (row: 0, col: 2));
+    });
+
+    test('the partial picture replaces the montage, once', () async {
+      final grid = queuedGrid('g');
+      final montage = p.join(folder.path, 'g.jpg');
+      File(montage).writeAsStringSync('montage');
+      grid.previewPath = montage;
+      await gridRunner.drainAll();
+
+      remote.answers = [
+        {'token': 'g', 'status': 'needs_decision', 'failed_cells': const []},
+      ];
+      await gridRunner.refreshResults();
+      await gridRunner.refreshResults();
+
+      expect(grid.hasStitchedPreview, isTrue);
+      expect(File(grid.previewPath!).readAsStringSync(), 'stitched');
+      expect(File(montage).existsSync(), isFalse);
+      expect(remote.previewsAsked, ['g']);
+    });
+
+    test('no picture is asked for before there is one', () async {
+      queuedGrid('g');
+      await gridRunner.drainAll();
+
+      for (final status in ['stitching', 'stitch_failed']) {
+        remote.answers = [
+          {'token': 'g', 'status': status},
+        ];
+        await gridRunner.refreshResults();
+      }
+
+      expect(remote.previewsAsked, isEmpty);
+    });
+
+    test('a picture that could not be fetched is tried again, even after it is final', () async {
+      final grid = queuedGrid('g');
+      await gridRunner.drainAll();
+      remote.previewFailure = const AppException(NetworkFailure());
+
+      remote.answers = [
+        {'token': 'g', 'status': 'kept', 'grade': 'ok'},
+      ];
+      await gridRunner.refreshResults();
+      expect(grid.hasStitchedPreview, isFalse);
+      expect(grid.serverStatus, 'kept');
+
+      remote.previewFailure = null;
+      await gridRunner.refreshResults();
+      expect(grid.hasStitchedPreview, isTrue);
+    });
+
+    test('a decision is applied from the answer', () async {
+      final grid = queuedGrid('g');
+      await gridRunner.drainAll();
+      remote.decisionAnswer = {'token': 'g', 'status': 'declined'};
+
+      await gridRunner.decideGrid(grid, use: false);
+
+      expect(remote.decisions, [false]);
+      expect(grid.serverStatus, 'declined');
+    });
+
+    test('a decision with no connection says so and changes nothing', () async {
+      final grid = queuedGrid('g')..serverStatus = 'needs_decision';
+      remote.failures['g'] = const AppException(NetworkFailure());
+
+      await expectLater(gridRunner.decideGrid(grid, use: true), throwsA(isA<AppException>()));
+
+      expect(grid.serverStatus, 'needs_decision');
+    });
+
+    test('overtaken before all of it went, what is left here is removed', () async {
+      final grid = queuedGrid('g');
+      grid.status = FollowUpUploadRecord.statusSent;
+      remote.answers = [
+        {'token': 'g', 'status': 'superseded'},
+      ];
+
+      await gridRunner.refreshResults();
+
+      expect(grid.tiles.any((tile) => File(tile.path).existsSync()), isFalse);
+    });
   });
 }
 

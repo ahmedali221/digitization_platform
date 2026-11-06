@@ -19,9 +19,53 @@ class UploadStatus {
       );
     }
     if (upload.status != FollowUpUploadRecord.statusSent) {
-      return const UploadStatus('Waiting to send', AppColors.hoverSurface, AppColors.textSecondaryIcon);
+      final tiles = upload.tiles;
+      final sent = tiles.where((tile) => tile.sent).length;
+      return UploadStatus(
+        sent > 0 ? 'Sent $sent of ${tiles.length}, the rest waiting' : 'Waiting to send',
+        AppColors.hoverSurface,
+        AppColors.textSecondaryIcon,
+      );
+    }
+    if (upload.kind == FollowUpUploadRecord.kindWidth) {
+      return switch (upload.serverStatus) {
+        'held' => const UploadStatus(
+          'Width waiting in the studio',
+          AppColors.warningContainer,
+          AppColors.onWarningContainer,
+        ),
+        'kept' => const UploadStatus(
+          'The studio kept its width',
+          AppColors.hoverSurface,
+          AppColors.textSecondaryIcon,
+        ),
+        // Saved as soon as the dashboard has it; reaching the studio is its job from there.
+        _ => const UploadStatus('Width saved', AppColors.successContainer, AppColors.onSuccessContainer),
+      };
     }
     return switch (upload.serverStatus) {
+      'receiving' || 'stitching' => const UploadStatus(
+        'Stitching on the dashboard',
+        AppColors.hoverSurface,
+        AppColors.textSecondaryIcon,
+      ),
+      'needs_decision' => const UploadStatus(
+        'Part did not join: your choice',
+        AppColors.warningContainer,
+        AppColors.onWarningContainer,
+      ),
+      'stitch_failed' => const UploadStatus(
+        'Could not stitch: retake',
+        AppColors.dangerContainer,
+        AppColors.onDangerContainer,
+        needsRetake: true,
+      ),
+      'declined' => const UploadStatus(
+        'Not used: retake',
+        AppColors.hoverSurface,
+        AppColors.textSecondaryIcon,
+        needsRetake: true,
+      ),
       'kept' when upload.grade == 'ok' => const UploadStatus(
         'Fixed',
         AppColors.successContainer,
@@ -50,9 +94,25 @@ class UploadStatus {
         AppColors.onWarningContainer,
       ),
       'approved' || 'pushed' || 'push_failed' => const UploadStatus(
+        'Approved, waiting for the studio',
+        AppColors.warningContainer,
+        AppColors.onWarningContainer,
+      ),
+      'studio_approved' => const UploadStatus(
         'Approved, target replaced',
         AppColors.successContainer,
         AppColors.onSuccessContainer,
+      ),
+      'studio_rejected' => const UploadStatus(
+        'Rejected by the studio: retake',
+        AppColors.dangerContainer,
+        AppColors.onDangerContainer,
+        needsRetake: true,
+      ),
+      'refused' => const UploadStatus(
+        'Refused',
+        AppColors.dangerContainer,
+        AppColors.onDangerContainer,
       ),
       'rejected' => const UploadStatus(
         'Rejected: retake',

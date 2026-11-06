@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 
 import 'package:flutter/foundation.dart';
@@ -8,16 +9,22 @@ import '../../../../core/theme/app_colors.dart';
 import '../../../../core/theme/app_spacing.dart';
 import '../../../../core/widgets/feedback_states.dart';
 import '../../../../core/widgets/primary_action_button.dart';
+import '../../data/models/follow_up_upload_record.dart';
 import '../../domain/entities/follow_up_package.dart';
+import '../../domain/entities/follow_up_uploads.dart';
 import '../../domain/entities/target_match_result.dart';
+import '../../domain/entities/target_width.dart';
 import '../../domain/repositories/follow_up_repository.dart';
 import '../../domain/services/target_video_matcher.dart';
+import '../widgets/labelled_photo.dart';
 import 'follow_up_camera_page.dart';
 import 'shot_review_page.dart';
+import 'target_width_page.dart';
 
 /// One AR target and the way to replace it. The photograph goes whole, with no
 /// crop: the dashboard's reviewer straightens it from the untouched photograph,
-/// and a crop here could cut off a corner of the wall for good.
+/// and a crop here could cut off a corner of the wall for good. Several can be
+/// sent: each shows here as New, with what the dashboard and the studio made of it.
 class TargetDetailPage extends StatefulWidget {
   const TargetDetailPage({super.key, required this.package, required this.target});
 
@@ -34,6 +41,18 @@ class _TargetDetailPageState extends State<TargetDetailPage> {
 
   late final Future<({String image, String? frame})> _paths = _loadPaths();
 
+  @override
+  void initState() {
+    super.initState();
+    unawaited(_repository.sync());
+  }
+
+  double? get _currentWidth => currentTargetWidth(
+    widget.target,
+    _repository.uploads(widget.package.siteId),
+    packageCreatedAt: widget.package.createdAt,
+  );
+
   Future<({String image, String? frame})> _loadPaths() async {
     final siteId = widget.package.siteId;
     final frameKey = widget.target.videoFrameKey;
@@ -43,7 +62,24 @@ class _TargetDetailPageState extends State<TargetDetailPage> {
     );
   }
 
-  Future<void> _replace(String? framePath) async {
+  /// Measures the target as it stands, with no new photograph.
+  Future<void> _measureOnly(String imagePath) async {
+    final messenger = ScaffoldMessenger.of(context);
+    final width = await Navigator.of(context).push<TargetWidth>(
+      MaterialPageRoute(builder: (_) => TargetWidthPage(title: widget.target.label, imagePath: imagePath)),
+    );
+    if (width == null) return;
+
+    try {
+      await _repository.queueTargetWidth(package: widget.package, target: widget.target, width: width);
+      messenger.showSnackBar(SnackBar(content: Text('Width saved: ${TargetWidth.format(width.meters)}.')));
+      if (mounted) setState(() {});
+    } catch (error) {
+      messenger.showSnackBar(SnackBar(content: Text('The width could not be saved: $error')));
+    }
+  }
+
+  Future<void> _replace(String imagePath, String? framePath) async {
     final navigator = Navigator.of(context);
     final messenger = ScaffoldMessenger.of(context);
     final folder = await _repository.newShotsFolder(widget.package.siteId);
@@ -76,18 +112,31 @@ class _TargetDetailPageState extends State<TargetDetailPage> {
           warningConfirmed = true;
         }
 
+        // Last, so a retake never costs a measurement.
+        final width = await navigator.push<TargetWidth>(
+          MaterialPageRoute(
+            builder: (_) => TargetWidthPage(
+              title: widget.target.label,
+              imagePath: imagePath,
+              discardsPhotograph: true,
+              currentMeters: _currentWidth,
+            ),
+          ),
+        );
+        if (width == null) return;
+
         await _repository.queueTargetCapture(
           package: widget.package,
           target: widget.target,
           photoPath: chosen,
           match: match,
           warningConfirmed: warningConfirmed,
+          width: width,
         );
         await Directory(folder).delete(recursive: true);
         messenger.showSnackBar(
           const SnackBar(content: Text('Saved. It will be reviewed on the dashboard before anything changes.')),
         );
-        if (mounted) navigator.pop();
         return;
       } catch (error) {
         messenger.showSnackBar(SnackBar(content: Text('The photograph could not be saved: $error')));
@@ -151,10 +200,22 @@ class _TargetDetailPageState extends State<TargetDetailPage> {
           builder: (context, snapshot) {
             if (!snapshot.hasData) return const LoadingIndicator();
             final paths = snapshot.data!;
-            return ListView(
+            return ListenableBuilder(
+              listenable: _repository.uploadsChanged,
+              builder: (context, _) {
+            final width = _currentWidth;
+            final newPhotos = newPhotosOf(
+              widget.package,
+              _repository.uploads(widget.package.siteId),
+              kind: FollowUpUploadRecord.kindTarget,
+              itemKey: target.arKey,
+            );
+            return RefreshIndicator(
+              onRefresh: _repository.sync,
+              child: ListView(
               padding: const EdgeInsets.all(AppSpacing.lg),
               children: [
-                Text(target.wall.name, style: textTheme.titleMedium),
+                Text(target.place, style: textTheme.titleMedium),
                 if (target.description != null && target.description!.isNotEmpty) ...[
                   const SizedBox(height: AppSpacing.xs),
                   Text(
@@ -163,12 +224,18 @@ class _TargetDetailPageState extends State<TargetDetailPage> {
                   ),
                 ],
                 const SizedBox(height: AppSpacing.md),
-                Text('Current target', style: textTheme.titleSmall),
-                const SizedBox(height: AppSpacing.xs),
-                ClipRRect(
-                  borderRadius: BorderRadius.circular(AppRadius.chip),
-                  child: Image.file(File(paths.image)),
-                ),
+                OldPhoto(path: paths.image, caption: 'The target in use'),
+                for (final photo in newPhotos) ...[
+                  const SizedBox(height: AppSpacing.lg),
+                  NewPhoto(key: ValueKey(photo.token), upload: photo),
+                ],
+                if (targetWasReplaced(newPhotos)) ...[
+                  const SizedBox(height: AppSpacing.md),
+                  Text(
+                    'This target has been replaced. Download a new package before replacing it again.',
+                    style: textTheme.bodySmall?.copyWith(color: AppColors.onWarningContainer),
+                  ),
+                ],
                 if (paths.frame != null) ...[
                   const SizedBox(height: AppSpacing.lg),
                   Text('First frame of its video', style: textTheme.titleSmall),
@@ -178,6 +245,22 @@ class _TargetDetailPageState extends State<TargetDetailPage> {
                     child: Image.file(File(paths.frame!)),
                   ),
                 ],
+                const SizedBox(height: AppSpacing.lg),
+                Text('Width on the wall', style: textTheme.titleSmall),
+                const SizedBox(height: AppSpacing.xs),
+                if (width != null)
+                  Text(TargetWidth.format(width), style: textTheme.titleMedium)
+                else
+                  Text(
+                    'Width missing. Thoth Guide AI needs the real size of every target.',
+                    style: textTheme.bodySmall?.copyWith(color: AppColors.onWarningContainer),
+                  ),
+                const SizedBox(height: AppSpacing.sm),
+                OutlinedButton.icon(
+                  icon: const Icon(Icons.straighten),
+                  label: Text(width == null ? 'Measure width' : 'Measure again'),
+                  onPressed: _working ? null : () => _measureOnly(paths.image),
+                ),
                 const SizedBox(height: AppSpacing.lg),
                 Text(
                   'Stand square to the wall and include all of what the target shows, with some wall around it. '
@@ -189,9 +272,12 @@ class _TargetDetailPageState extends State<TargetDetailPage> {
                   icon: Icons.photo_camera,
                   label: _working ? 'Checking against the video…' : 'Replace this target',
                   enabled: !_working,
-                  onTap: () => _replace(paths.frame),
+                  onTap: () => _replace(paths.image, paths.frame),
                 ),
               ],
+            ),
+            );
+              },
             );
           },
         ),

@@ -38,13 +38,20 @@ class FollowUpUploadRecordAdapter extends TypeAdapter<FollowUpUploadRecord> {
       reasons: (fields[18] as List).cast<String>(),
       rejectReason: fields[19] as String?,
       createdAt: fields[20] as DateTime,
+      physicalWidthM: fields[21] as double?,
+      widthSource: fields[22] as String?,
+      previewPath: fields[23] as String?,
+      rows: fields[24] as int?,
+      cols: fields[25] as int?,
+      tilesJson: fields[26] as String?,
+      failedCellsJson: fields[27] as String?,
     );
   }
 
   @override
   void write(BinaryWriter writer, FollowUpUploadRecord obj) {
     writer
-      ..writeByte(21)
+      ..writeByte(28)
       ..writeByte(0)
       ..write(obj.token)
       ..writeByte(1)
@@ -86,7 +93,21 @@ class FollowUpUploadRecordAdapter extends TypeAdapter<FollowUpUploadRecord> {
       ..writeByte(19)
       ..write(obj.rejectReason)
       ..writeByte(20)
-      ..write(obj.createdAt);
+      ..write(obj.createdAt)
+      ..writeByte(21)
+      ..write(obj.physicalWidthM)
+      ..writeByte(22)
+      ..write(obj.widthSource)
+      ..writeByte(23)
+      ..write(obj.previewPath)
+      ..writeByte(24)
+      ..write(obj.rows)
+      ..writeByte(25)
+      ..write(obj.cols)
+      ..writeByte(26)
+      ..write(obj.tilesJson)
+      ..writeByte(27)
+      ..write(obj.failedCellsJson);
   }
 
   @override

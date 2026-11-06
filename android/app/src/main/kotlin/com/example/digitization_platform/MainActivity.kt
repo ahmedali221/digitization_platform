@@ -2,12 +2,15 @@ package com.example.digitization_platform
 
 import android.content.ContentValues
 import android.content.Context
+import android.content.Intent
 import android.hardware.camera2.CameraCharacteristics
 import android.hardware.camera2.CameraManager
 import android.media.MediaScannerConnection
 import android.net.Uri
 import android.os.Build
 import android.os.Environment
+import android.os.Handler
+import android.os.Looper
 import android.provider.MediaStore
 import android.view.KeyEvent
 import androidx.camera.camera2.interop.Camera2CameraInfo
@@ -15,6 +18,7 @@ import androidx.camera.core.CameraInfo
 import androidx.camera.core.CameraSelector
 import androidx.camera.lifecycle.ProcessCameraProvider
 import androidx.core.content.ContextCompat
+import com.google.ar.core.ArCoreApk
 import io.flutter.embedding.android.FlutterActivity
 import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.MethodChannel
@@ -41,10 +45,16 @@ class MainActivity : FlutterActivity() {
     private val captureButtonChannelName = "nilelens/capture_button"
     private val publicDownloadsChannelName = "nilelens/public_downloads"
     private val lensInfoChannelName = "nilelens/lens_info"
+    private val arMeasureChannelName = "nilelens/ar_measure"
     private val downloadsSubfolder = "NileLens"
+
+    private val arMeasureRequestCode = 0x4152
+    private val arAvailabilityAttempts = 15
+    private val arAvailabilityRetryMillis = 200L
 
     private var captureButtonArmed = false
     private var captureButtonChannel: MethodChannel? = null
+    private var pendingArMeasure: MethodChannel.Result? = null
 
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
@@ -99,6 +109,68 @@ class MainActivity : FlutterActivity() {
                 else -> result.notImplemented()
             }
         }
+
+        val arMeasureChannel =
+            MethodChannel(flutterEngine.dartExecutor.binaryMessenger, arMeasureChannelName)
+        arMeasureChannel.setMethodCallHandler { call, result ->
+            when (call.method) {
+                "isSupported" -> reportArSupport(result, arAvailabilityAttempts)
+                "measure" -> {
+                    if (pendingArMeasure != null) {
+                        result.error("already_measuring", "A measurement is already open", null)
+                    } else {
+                        pendingArMeasure = result
+                        startActivityForResult(
+                            Intent(this, ArMeasureActivity::class.java),
+                            arMeasureRequestCode,
+                        )
+                    }
+                }
+                else -> result.notImplemented()
+            }
+        }
+    }
+
+    /**
+     * ARCore answers "checking" for a moment after launch while it asks Google,
+     * so this waits that out. Still unsure after that (no signal at a site, say):
+     * reports true, because the measuring screen itself finds out for certain and
+     * says so, whereas false would hide AR on a phone that can do it.
+     */
+    private fun reportArSupport(result: MethodChannel.Result, attemptsLeft: Int) {
+        val availability = ArCoreApk.getInstance().checkAvailability(this)
+        if (availability.isTransient && attemptsLeft > 0) {
+            Handler(Looper.getMainLooper()).postDelayed(
+                { reportArSupport(result, attemptsLeft - 1) },
+                arAvailabilityRetryMillis,
+            )
+            return
+        }
+        result.success(!availability.isUnsupported)
+    }
+
+    @Deprecated("Deprecated in Java")
+    override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
+        if (requestCode != arMeasureRequestCode) {
+            super.onActivityResult(requestCode, resultCode, data)
+            return
+        }
+
+        val pending = pendingArMeasure
+        pendingArMeasure = null
+        pending?.success(
+            when (resultCode) {
+                RESULT_OK -> mapOf(
+                    "status" to "measured",
+                    "meters" to data?.getDoubleExtra(ArMeasureActivity.EXTRA_METERS, 0.0),
+                )
+                ArMeasureActivity.RESULT_UNAVAILABLE -> mapOf(
+                    "status" to "unavailable",
+                    "reason" to data?.getStringExtra(ArMeasureActivity.EXTRA_REASON),
+                )
+                else -> mapOf("status" to "cancelled")
+            },
+        )
     }
 
     /**

@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:crypto/crypto.dart' as crypto;
+import 'package:flutter/foundation.dart';
 import 'package:path/path.dart' as p;
 import 'package:uuid/uuid.dart';
 
@@ -10,8 +11,10 @@ import '../../../../core/errors/failure.dart';
 import '../../../../core/storage/directory_manager.dart';
 import '../../domain/entities/follow_up_package.dart';
 import '../../domain/entities/target_match_result.dart';
+import '../../domain/entities/target_width.dart';
 import '../../domain/repositories/follow_up_repository.dart';
 import '../../domain/services/follow_up_upload_runner.dart';
+import '../../domain/services/shot_processing.dart';
 import '../datasources/follow_up_local_data_source.dart';
 import '../datasources/follow_up_remote_data_source.dart';
 import '../models/follow_up_upload_record.dart';
@@ -36,10 +39,16 @@ class FollowUpRepositoryImpl implements FollowUpRepository {
   static const _filesFolder = 'files';
   static const _capturesFolder = 'captures';
   static const _shotsFolder = 'shots';
+  static const previewsFolder = 'previews';
   static const _uuid = Uuid();
 
+  /// A new name rather than the montage's: the image cache goes by path, and
+  /// would go on showing the montage.
+  static String stitchedPreviewPath(Directory previews, String token) =>
+      p.join(previews.path, '$token${FollowUpUploadRecord.stitchedPreviewSuffix}');
+
   @override
-  set onUploadsChanged(void Function()? listener) => _runner.onChanged = listener;
+  Listenable get uploadsChanged => _runner.changes;
 
   @override
   Future<FollowUpPackage?> localPackage(String siteId) async {
@@ -115,6 +124,18 @@ class FollowUpRepositoryImpl implements FollowUpRepository {
         await item.delete();
       }
     }
+
+    await _dropPreviewsBefore(package);
+  }
+
+  /// This package's images already show whatever was approved from an earlier
+  /// one, so those photographs aren't shown as "new" any more.
+  Future<void> _dropPreviewsBefore(FollowUpPackage package) async {
+    final earlier = uploads(package.siteId).where((r) => r.packageId != package.id && r.previewPath != null);
+    for (final record in earlier) {
+      final preview = File(record.previewPath!);
+      if (await preview.exists()) await preview.delete();
+    }
   }
 
   Future<bool> _isIntact(File file, PackageFile expected) async {
@@ -151,10 +172,13 @@ class FollowUpRepositoryImpl implements FollowUpRepository {
           'ar_key': t.arKey,
           'label': t.label,
           'description': t.description,
-          'wall': {'id': t.wall.id, 'name': t.wall.name},
+          'wall': t.wall == null ? null : {'id': t.wall!.id, 'name': t.wall!.name},
+          'wall_label': t.wallLabel,
+          'video_status': t.videoStatus,
           'image_key': t.imageKey,
           'video_frame_key': t.videoFrameKey,
           'has_video': t.hasVideo,
+          'physical_width_m': t.physicalWidthM,
         },
     ],
     'files': {
@@ -171,6 +195,16 @@ class FollowUpRepositoryImpl implements FollowUpRepository {
   List<FollowUpUploadRecord> uploads(String siteId) =>
       _local.all().where((r) => r.siteId == siteId).toList()
         ..sort((a, b) => b.createdAt.compareTo(a.createdAt));
+
+  @override
+  Future<String?> photoPath(FollowUpUploadRecord upload) async {
+    for (final stored in [upload.previewPath, upload.filePath]) {
+      if (stored == null || stored.isEmpty) continue;
+      final file = await _directories.resolveExistingFile(stored);
+      if (file != null) return file.path;
+    }
+    return null;
+  }
 
   @override
   Future<String> newShotsFolder(String siteId) async {
@@ -195,12 +229,80 @@ class FollowUpRepositoryImpl implements FollowUpRepository {
   );
 
   @override
+  Future<void> queueAnnotationGrid({
+    required FollowUpPackage package,
+    required FollowUpAnnotation annotation,
+    required int rows,
+    required int cols,
+    required Map<int, String> photos,
+  }) async {
+    final itemKey = annotation.id.toString();
+    await _discardUnsent(package.siteId, FollowUpUploadRecord.kindAnnotationGrid, itemKey);
+
+    final token = _uuid.v4();
+    final captures = await _directories.followUpDir(package.siteId, _capturesFolder);
+
+    final tiles = <GridTile>[];
+    for (final entry in photos.entries) {
+      final row = entry.key ~/ cols;
+      final col = entry.key % cols;
+      final file = await File(entry.value).copy(p.join(captures.path, '${token}_r${row}c$col.jpg'));
+      tiles.add(GridTile(row: row, col: col, path: file.path, sha256: await _sha256(file)));
+    }
+
+    final previews = await _directories.followUpDir(package.siteId, previewsFolder);
+    final now = DateTime.now();
+
+    await _local.put(
+      FollowUpUploadRecord(
+        token: token,
+        kind: FollowUpUploadRecord.kindAnnotationGrid,
+        siteId: package.siteId,
+        packageId: package.id,
+        itemKey: itemKey,
+        label: annotation.referenceCode,
+        filePath: '',
+        sha256: '',
+        capturedAt: now,
+        createdAt: now,
+        rows: rows,
+        cols: cols,
+        previewPath: await _makeMontage(tiles, rows, cols, p.join(previews.path, '$token.jpg')),
+      )..tiles = tiles,
+    );
+
+    unawaited(_runner.drainAll());
+  }
+
+  /// Only for showing, like a photograph's preview.
+  Future<String?> _makeMontage(List<GridTile> tiles, int rows, int cols, String target) async {
+    try {
+      final byRow = [
+        for (var row = 0; row < rows; row++)
+          [
+            for (var col = 0; col < cols; col++)
+              tiles.firstWhere((tile) => tile.row == row && tile.col == col).path,
+          ],
+      ];
+      await compute(makeMontage, MontageRequest(rows: byRow, targetPath: target));
+      return target;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  @override
+  Future<void> decideGrid(FollowUpUploadRecord upload, {required bool use}) =>
+      _runner.decideGrid(upload, use: use);
+
+  @override
   Future<void> queueTargetCapture({
     required FollowUpPackage package,
     required FollowUpTarget target,
     required String photoPath,
     required TargetMatchResult? match,
     required bool warningConfirmed,
+    required TargetWidth width,
   }) => _queue(
     kind: FollowUpUploadRecord.kindTarget,
     siteId: package.siteId,
@@ -213,7 +315,41 @@ class FollowUpRepositoryImpl implements FollowUpRepository {
     suggestedCornersJson: match?.frameCorners == null
         ? null
         : jsonEncode([for (final corner in match!.frameCorners!) corner.toJson()]),
+    width: width,
   );
+
+  @override
+  Future<void> queueTargetWidth({
+    required FollowUpPackage package,
+    required FollowUpTarget target,
+    required TargetWidth width,
+  }) async {
+    await _discardUnsent(package.siteId, FollowUpUploadRecord.kindWidth, target.arKey);
+
+    final now = DateTime.now();
+    await _local.put(
+      FollowUpUploadRecord(
+        token: _uuid.v4(),
+        kind: FollowUpUploadRecord.kindWidth,
+        siteId: package.siteId,
+        packageId: package.id,
+        itemKey: target.arKey,
+        label: target.label,
+        filePath: '',
+        sha256: '',
+        capturedAt: now,
+        physicalWidthM: _rounded(width.meters),
+        widthSource: width.source,
+        createdAt: now,
+      ),
+    );
+
+    unawaited(_runner.drainAll());
+  }
+
+  /// Millimetres are more than either way of measuring can tell apart, and it's
+  /// what every later step stores.
+  double _rounded(double meters) => (meters * 1000).round() / 1000;
 
   Future<void> _queue({
     required String kind,
@@ -225,12 +361,14 @@ class FollowUpRepositoryImpl implements FollowUpRepository {
     String? videoMatchJson,
     bool warningConfirmed = false,
     String? suggestedCornersJson,
+    TargetWidth? width,
   }) async {
     await _discardUnsent(siteId, kind, itemKey);
 
     final token = _uuid.v4();
     final captures = await _directories.followUpDir(siteId, _capturesFolder);
     final file = await File(photoPath).copy(p.join(captures.path, '$token.jpg'));
+    final preview = await _makePreview(siteId, token, file.path);
     final now = DateTime.now();
 
     await _local.put(
@@ -248,25 +386,50 @@ class FollowUpRepositoryImpl implements FollowUpRepository {
         warningConfirmed: warningConfirmed,
         suggestedCornersJson: suggestedCornersJson,
         createdAt: now,
+        physicalWidthM: width == null ? null : _rounded(width.meters),
+        widthSource: width?.source,
+        previewPath: preview,
       ),
     );
 
     unawaited(_runner.drainAll());
   }
 
-  /// A newer photograph of the same thing: the older one need not be sent.
+  /// Only for showing, so failing to make one mustn't lose the photograph.
+  Future<String?> _makePreview(String siteId, String token, String source) async {
+    try {
+      final previews = await _directories.followUpDir(siteId, previewsFolder);
+      final target = p.join(previews.path, '$token.jpg');
+      await compute(makePreview, PreviewRequest(sourcePath: source, targetPath: target));
+      return target;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  /// A newer one of the same thing: the older one need not be sent. Except target
+  /// photographs: see FollowUpUploadRecord.replacedByNewerOne. A grid and a single
+  /// photograph of an annotation replace each other: see FollowUpUploadRecord.family.
+  /// If part of a grid already went, the dashboard drops it when the new one arrives.
   Future<void> _discardUnsent(String siteId, String kind, String itemKey) async {
+    final family = kind == FollowUpUploadRecord.kindAnnotationGrid
+        ? FollowUpUploadRecord.kindAnnotation
+        : kind;
     final stale = _local.all().where(
       (r) =>
+          r.replacedByNewerOne &&
           r.siteId == siteId &&
-          r.kind == kind &&
+          r.family == family &&
           r.itemKey == itemKey &&
           (r.status == FollowUpUploadRecord.statusQueued ||
               r.status == FollowUpUploadRecord.statusFailed),
     );
     for (final record in stale.toList()) {
-      final file = File(record.filePath);
-      if (await file.exists()) await file.delete();
+      for (final path in [record.filePath, record.previewPath, for (final tile in record.tiles) tile.path]) {
+        if (path == null || path.isEmpty) continue;
+        final file = File(path);
+        if (await file.exists()) await file.delete();
+      }
       await _local.delete(record.token);
     }
   }

@@ -63,6 +63,8 @@ class FollowUpRemoteDataSource {
           'package_id': record.packageId,
           'captured_at': record.capturedAt.toUtc().toIso8601String(),
           if (isTarget) 'warning_confirmed': record.warningConfirmed ? '1' : '0',
+          if (isTarget) 'physical_width_m': record.physicalWidthM,
+          if (isTarget) 'width_source': record.widthSource,
           if (record.videoMatchJson != null) 'video_match': record.videoMatchJson,
           if (record.suggestedCornersJson != null)
             'suggested_corners': record.suggestedCornersJson,
@@ -78,6 +80,90 @@ class FollowUpRemoteDataSource {
       throw AppException(mapDioException(e));
     }
   }
+
+  /// Sends a target's width on its own. The token makes a retry harmless here too.
+  Future<void> uploadWidth(FollowUpUploadRecord record) async {
+    try {
+      await _dio.post(
+        ApiEndpoints.targetWidth(record.itemKey),
+        data: {
+          'client_token': record.token,
+          'physical_width_m': record.physicalWidthM,
+          'width_source': record.widthSource,
+          'package_id': record.packageId,
+          'measured_at': record.capturedAt.toUtc().toIso8601String(),
+        },
+      );
+    } on DioException catch (e) {
+      throw AppException(mapDioException(e));
+    }
+  }
+
+  /// Announces a grid before its photographs. A retry is answered from the first.
+  Future<void> registerGrid(FollowUpUploadRecord record) async {
+    try {
+      await _dio.post(
+        ApiEndpoints.recaptureGrids(int.parse(record.itemKey)),
+        data: {
+          'client_token': record.token,
+          'rows': record.rows,
+          'cols': record.cols,
+          'package_id': record.packageId,
+          'captured_at': record.capturedAt.toUtc().toIso8601String(),
+          'tiles': [
+            for (final tile in record.tiles)
+              {'row': tile.row, 'col': tile.col, 'sha256': tile.sha256},
+          ],
+        },
+      );
+    } on DioException catch (e) {
+      throw AppException(mapDioException(e));
+    }
+  }
+
+  /// Sends one photograph of a grid, so a dropped connection costs only that one.
+  Future<void> uploadGridTile(
+    String token,
+    GridTile tile, {
+    required Stream<List<int>> Function() openBytes,
+    required int length,
+  }) async {
+    try {
+      await _dio.post(
+        ApiEndpoints.recaptureGridTiles(token),
+        data: FormData.fromMap({
+          'row': tile.row,
+          'col': tile.col,
+          'sha256': tile.sha256,
+          'tile': MultipartFile.fromStream(
+            openBytes,
+            length,
+            filename: 'r${tile.row}c${tile.col}.jpg',
+          ),
+        }),
+        options: Options(sendTimeout: const Duration(minutes: 5)),
+      );
+    } on DioException catch (e) {
+      throw AppException(mapDioException(e));
+    }
+  }
+
+  /// Answers a grid with cells missing: use the picture as it is, or retake.
+  /// Returns what the dashboard says became of it.
+  Future<Map<String, dynamic>> decideGrid(String token, {required bool use}) async {
+    try {
+      final response = await _dio.post<Map<String, dynamic>>(
+        ApiEndpoints.recaptureGridDecision(token),
+        data: {'decision': use ? 'use' : 'retake'},
+      );
+      return response.data!;
+    } on DioException catch (e) {
+      throw AppException(mapDioException(e));
+    }
+  }
+
+  Future<void> downloadGridPreview(String token, String savePath) =>
+      downloadFile(ApiEndpoints.recaptureGridPreview(token), savePath);
 
   Future<List<Map<String, dynamic>>> results(List<String> tokens) async {
     try {

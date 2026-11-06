@@ -24,5 +24,15 @@ class ApiEndpoints {
   static String annotationRecapture(int annotationId) =>
       '/annotations/$annotationId/recapture';
   static String targetImage(String arKey) => '/studio-assets/$arKey/image';
+  static String targetWidth(String arKey) =>
+      '/studio-assets/$arKey/physical-width';
   static const String followUpResults = '/follow-up/results';
+  static String recaptureGrids(int annotationId) =>
+      '/annotations/$annotationId/recapture-grids';
+  static String recaptureGridTiles(String token) =>
+      '/recapture-grids/$token/tiles';
+  static String recaptureGridDecision(String token) =>
+      '/recapture-grids/$token/decision';
+  static String recaptureGridPreview(String token) =>
+      '/recapture-grids/$token/preview';
 }

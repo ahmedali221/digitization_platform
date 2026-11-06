@@ -154,23 +154,44 @@ class FollowUpTarget {
     required this.imageKey,
     required this.videoFrameKey,
     required this.hasVideo,
+    this.physicalWidthM,
+    this.wallLabel,
+    this.videoStatus,
   });
 
   factory FollowUpTarget.fromJson(Map<String, dynamic> json) => FollowUpTarget(
     arKey: json['ar_key'] as String,
     label: json['label'] as String? ?? '',
     description: json['description'] as String?,
-    wall: FollowUpWall.fromJson(json['wall'] as Map<String, dynamic>),
+    wall: json['wall'] == null ? null : FollowUpWall.fromJson(json['wall'] as Map<String, dynamic>),
+    wallLabel: json['wall_label'] as String?,
+    videoStatus: json['video_status'] as String?,
     imageKey: json['image_key'] as String,
     videoFrameKey: json['video_frame_key'] as String?,
     hasVideo: json['has_video'] as bool? ?? false,
+    physicalWidthM: (json['physical_width_m'] as num?)?.toDouble(),
   );
 
   final String arKey;
   final String label;
   final String? description;
-  final FollowUpWall wall;
+
+  /// Null on a profile that isn't in an AR group yet, so nothing says which of
+  /// the dashboard's walls it's on. Its [wallLabel] is only the studio's name.
+  final FollowUpWall? wall;
+  final String? wallLabel;
+
+  /// The studio's state of its video, such as `no_video`. Null in a package
+  /// built before every profile could come to the phone.
+  final String? videoStatus;
   final String imageKey;
   final String? videoFrameKey;
   final bool hasVideo;
+
+  /// How wide it really is, in metres, as the dashboard knew when the package
+  /// was built. Null means nobody has measured it yet.
+  final double? physicalWidthM;
+
+  /// The best name there is for where it is.
+  String get place => wall?.name ?? wallLabel ?? label;
 }

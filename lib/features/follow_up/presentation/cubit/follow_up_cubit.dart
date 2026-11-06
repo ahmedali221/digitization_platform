@@ -8,7 +8,7 @@ import 'follow_up_state.dart';
 
 class FollowUpCubit extends Cubit<FollowUpState> {
   FollowUpCubit(this._repository, this._siteId) : super(const FollowUpState()) {
-    _repository.onUploadsChanged = refreshUploads;
+    _repository.uploadsChanged.addListener(refreshUploads);
     load();
   }
 
@@ -72,7 +72,7 @@ class FollowUpCubit extends Cubit<FollowUpState> {
 
   FollowUpUploadRecord? latestFor(String kind, String itemKey) {
     for (final upload in state.uploads) {
-      if (upload.kind == kind && upload.itemKey == itemKey) return upload;
+      if (upload.family == kind && upload.itemKey == itemKey) return upload;
     }
     return null;
   }
@@ -81,7 +81,7 @@ class FollowUpCubit extends Cubit<FollowUpState> {
 
   @override
   Future<void> close() {
-    _repository.onUploadsChanged = null;
+    _repository.uploadsChanged.removeListener(refreshUploads);
     return super.close();
   }
 }

@@ -11,6 +11,10 @@ const int _sharpnessLongEdge = 1200;
 
 const int _cropJpegQuality = 95;
 
+/// Big enough to judge a photograph on a phone's screen, small enough to keep.
+const int _previewLongEdge = 1200;
+const int _previewJpegQuality = 80;
+
 /// Laplacian variance of each shot, keyed by path. Higher is sharper.
 Map<String, double> measureSharpness(List<String> paths) {
   final scores = <String, double>{};
@@ -57,6 +61,102 @@ class CropRequest {
   final double top;
   final double right;
   final double bottom;
+}
+
+class PreviewRequest {
+  const PreviewRequest({required this.sourcePath, required this.targetPath});
+
+  final String sourcePath;
+  final String targetPath;
+}
+
+/// Writes a small upright copy of a photograph, for the follow-up pages to show
+/// after the full one has been sent and deleted.
+void makePreview(PreviewRequest request) {
+  final image = cv.imread(request.sourcePath);
+  try {
+    if (image.rows == 0 || image.cols == 0) {
+      throw StateError('shot_processing: unreadable image at ${request.sourcePath}');
+    }
+    final longEdge = math.max(image.rows, image.cols);
+    final scale = math.min(1.0, _previewLongEdge / longEdge);
+    final small = cv.resize(image, (
+      (image.cols * scale).round(),
+      (image.rows * scale).round(),
+    ), interpolation: cv.INTER_AREA);
+    final params = cv.VecI32.fromList([cv.IMWRITE_JPEG_QUALITY, _previewJpegQuality]);
+    try {
+      if (!cv.imwrite(request.targetPath, small, params: params)) {
+        throw StateError('shot_processing: could not write ${request.targetPath}');
+      }
+    } finally {
+      params.dispose();
+      small.dispose();
+    }
+  } finally {
+    image.dispose();
+  }
+}
+
+class MontageRequest {
+  const MontageRequest({required this.rows, required this.targetPath});
+
+  /// Photograph paths, row by row, each row the same length.
+  final List<List<String>> rows;
+  final String targetPath;
+}
+
+/// Writes the photographs of a grid side by side at a small size, to show until
+/// the dashboard's stitched picture arrives. They aren't joined, only laid out.
+void makeMontage(MontageRequest request) {
+  final columns = request.rows.first.length;
+  final cellWidth = (_previewLongEdge / columns).round();
+  // A shape from the first, so all of them fit together.
+  var cellHeight = 0;
+
+  cv.Mat cell(String path) {
+    final image = cv.imread(path);
+    try {
+      if (image.rows == 0 || image.cols == 0) {
+        throw StateError('shot_processing: unreadable image at $path');
+      }
+      if (cellHeight == 0) cellHeight = (image.rows * cellWidth / image.cols).round();
+      return cv.resize(image, (cellWidth, cellHeight), interpolation: cv.INTER_AREA);
+    } finally {
+      image.dispose();
+    }
+  }
+
+  /// Lays [next] beside or under [soFar], and frees both.
+  cv.Mat joined(cv.Mat soFar, cv.Mat next, cv.Mat Function(cv.Mat, cv.Mat) join) {
+    final both = join(soFar, next);
+    soFar.dispose();
+    next.dispose();
+    return both;
+  }
+
+  cv.Mat? montage;
+  try {
+    for (final row in request.rows) {
+      var strip = cell(row.first);
+      for (final path in row.skip(1)) {
+        strip = joined(strip, cell(path), (a, b) => cv.hconcat(a, b));
+      }
+      final current = montage;
+      montage = current == null ? strip : joined(current, strip, (a, b) => cv.vconcat(a, b));
+    }
+
+    final params = cv.VecI32.fromList([cv.IMWRITE_JPEG_QUALITY, _previewJpegQuality]);
+    try {
+      if (!cv.imwrite(request.targetPath, montage!, params: params)) {
+        throw StateError('shot_processing: could not write ${request.targetPath}');
+      }
+    } finally {
+      params.dispose();
+    }
+  } finally {
+    montage?.dispose();
+  }
 }
 
 /// Writes the chosen part of a photograph as a JPEG. imread applies the EXIF

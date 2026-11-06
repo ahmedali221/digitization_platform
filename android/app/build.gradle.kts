@@ -61,6 +61,8 @@ dependencies {
     // CameraX depends on it as `implementation` too, so it's on the merged
     // APK classpath already but not :app's own compile classpath.
     implementation("com.google.guava:guava:33.0.0-android")
+    // ArMeasureActivity: measures a target's width on the wall.
+    implementation("com.google.ar:core:1.57.0")
 }
 
 // dartcv4's native-assets build hook is pinned to a specific NDK side-by-side

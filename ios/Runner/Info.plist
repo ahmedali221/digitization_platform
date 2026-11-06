@@ -46,7 +46,7 @@
 		<key>UIApplicationSupportsIndirectInputEvents</key>
 		<true/>
 		<key>NSCameraUsageDescription</key>
-		<string>NileLens needs camera access to capture wall grid photos.</string>
+		<string>NileLens needs camera access to capture wall grid photos and measure targets.</string>
 		<key>NSPhotoLibraryUsageDescription</key>
 		<string>NileLens keeps a backup copy of your capture photos in your photo library so they aren't lost if the app is reinstalled.</string>
 		<key>NSPhotoLibraryAddUsageDescription</key>

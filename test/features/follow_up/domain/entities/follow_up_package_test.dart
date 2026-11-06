@@ -30,7 +30,8 @@ const _manifest = '''
     "wall": {"id": 9, "name": "North Wall"},
     "image_key": "target-abcdefghij.jpg",
     "video_frame_key": null,
-    "has_video": false
+    "has_video": false,
+    "physical_width_m": 1.42
   }],
   "files": {
     "target-abcdefghij.jpg": {"url": "https://x.test/f", "size": 300, "sha256": "abc"}
@@ -60,8 +61,59 @@ void main() {
     expect(target.arKey, 'abcdefghij');
     expect(target.videoFrameKey, isNull);
     expect(target.hasVideo, isFalse);
+    expect(target.physicalWidthM, 1.42);
 
     expect(package.files['target-abcdefghij.jpg']!.size, 300);
+  });
+
+  test('a target nobody has measured, or a package from before widths, has none', () {
+    for (final width in [null, 'absent']) {
+      final json = jsonDecode(_manifest) as Map<String, dynamic>;
+      final target = (json['targets'] as List).first as Map<String, dynamic>;
+      if (width == null) {
+        target['physical_width_m'] = null;
+      } else {
+        target.remove('physical_width_m');
+      }
+
+      expect(FollowUpPackage.fromJson(json).targets.single.physicalWidthM, isNull);
+    }
+  });
+
+  test('a whole number of metres arrives as an integer in JSON, and still reads', () {
+    final json = jsonDecode(_manifest) as Map<String, dynamic>;
+    ((json['targets'] as List).first as Map<String, dynamic>)['physical_width_m'] = 2;
+
+    expect(FollowUpPackage.fromJson(json).targets.single.physicalWidthM, 2.0);
+  });
+
+  test('a target with no AR group still reads, under the name the studio gave it', () {
+    final target = FollowUpTarget.fromJson({
+      'ar_key': 'abcdefghij',
+      'label': 'Karnak: Bare wall',
+      'wall': null,
+      'wall_label': 'Bare wall',
+      'video_status': 'no_video',
+      'image_key': 'target-abcdefghij.jpg',
+      'video_frame_key': null,
+      'has_video': false,
+    });
+
+    expect(target.wall, isNull);
+    expect(target.place, 'Bare wall');
+    expect(target.videoStatus, 'no_video');
+  });
+
+  test('a target from a package older than that has a wall and no status', () {
+    final target = FollowUpTarget.fromJson({
+      'ar_key': 'abcdefghij',
+      'label': 'Wall-1',
+      'wall': {'id': 9, 'name': 'North Wall'},
+      'image_key': 'target-abcdefghij.jpg',
+    });
+
+    expect(target.place, 'North Wall');
+    expect(target.videoStatus, isNull);
   });
 
   test('an annotation with no wall picture still reads', () {
