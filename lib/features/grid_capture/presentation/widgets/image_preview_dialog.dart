@@ -1,9 +1,8 @@
-import 'dart:io';
-
 import 'package:flutter/material.dart';
 
 import '../../../../core/theme/app_colors.dart';
 import '../../../../core/theme/app_spacing.dart';
+import '../../../../core/widgets/photo_preview_dialog.dart';
 import '../../domain/entities/capture_quality.dart';
 import '../theme/quality_tier_meta.dart';
 import 'quality_badge.dart';
@@ -35,72 +34,26 @@ class ImagePreviewDialog extends StatelessWidget {
     ShotQualityScore? score,
     bool isMain = false,
   }) {
-    return showDialog<void>(
-      context: context,
-      barrierColor: Colors.black,
-      builder: (_) => ImagePreviewDialog(path: path, score: score, isMain: isMain),
+    return PhotoPreviewDialog.show<void>(
+      context,
+      (_) => ImagePreviewDialog(path: path, score: score, isMain: isMain),
     );
   }
 
   @override
   Widget build(BuildContext context) {
-    return Dialog.fullscreen(
-      backgroundColor: Colors.black,
-      child: Stack(
-        children: [
-          Positioned.fill(
-            child: InteractiveViewer(
-              minScale: 1,
-              maxScale: 4,
-              child: Center(
-                child: Image.file(
-                  File(path),
-                  fit: BoxFit.contain,
-                  errorBuilder: (context, error, stackTrace) => const Icon(
-                    Icons.broken_image,
-                    color: Colors.white70,
-                    size: 48,
-                  ),
-                ),
-              ),
-            ),
-          ),
-          if (score != null || isMain)
-            Positioned(
-              top: AppSpacing.md,
-              left: AppSpacing.md,
-              child: SafeArea(
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    if (score != null) _ShotScoreBadge(score: score!),
-                    if (score != null && isMain) const SizedBox(width: AppSpacing.xs),
-                    if (isMain) const _MainBadge(),
-                  ],
-                ),
-              ),
-            ),
-          Positioned(
-            top: AppSpacing.md,
-            right: AppSpacing.md,
-            child: SafeArea(
-              child: SizedBox(
-                width: 40,
-                height: 40,
-                child: Material(
-                  color: AppColors.cameraScrim,
-                  shape: const CircleBorder(),
-                  child: InkWell(
-                    onTap: () => Navigator.of(context).pop(),
-                    customBorder: const CircleBorder(),
-                    child: const Icon(Icons.close, color: Colors.white),
-                  ),
-                ),
-              ),
-            ),
-          ),
-        ],
-      ),
+    return PhotoPreviewDialog(
+      path: path,
+      badge: score != null || isMain
+          ? Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                if (score != null) _ShotScoreBadge(score: score!),
+                if (score != null && isMain) const SizedBox(width: AppSpacing.xs),
+                if (isMain) const _MainBadge(),
+              ],
+            )
+          : null,
     );
   }
 }

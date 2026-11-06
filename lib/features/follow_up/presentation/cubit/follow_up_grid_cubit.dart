@@ -16,8 +16,11 @@ class FollowUpGridState {
     this.cols = 2,
     this.photos = const {},
     this.activeCell = 0,
+    this.lastTakenCell,
     this.quality = const {},
     this.links = const {},
+    this.sending = false,
+    this.sendError,
   });
 
   final int rows;
@@ -26,13 +29,30 @@ class FollowUpGridState {
   /// One photograph per cell, keyed by cell, row by row.
   final Map<int, String> photos;
   final int activeCell;
+
+  /// Where the latest photograph went, which may since have been deleted. The
+  /// active cell has usually moved on from it by then.
+  final int? lastTakenCell;
   final Map<int, CellQualityResult> quality;
 
   /// How each scored pair of neighbours matched: see [_pair].
   final Map<int, NeighbourMatchMetrics> links;
 
+  /// Being handed over, during which the photographs must stay where they are.
+  final bool sending;
+
+  /// Why the last attempt to send failed, until the next attempt.
+  final Object? sendError;
+
   int get cellCount => rows * cols;
   bool get isComplete => photos.length == cellCount;
+
+  /// The cell whose photograph the camera offers to open: the one selected, or
+  /// failing that the latest taken. Null when neither has a photograph.
+  int? get reviewableCell {
+    if (photos.containsKey(activeCell)) return activeCell;
+    return photos.containsKey(lastTakenCell) ? lastTakenCell : null;
+  }
 
   /// The score of two neighbours, or null when they haven't both been scored.
   NeighbourMatchMetrics? link(int a, int b) => links[_pair(a, b)];
@@ -59,15 +79,22 @@ class FollowUpGridState {
     int? cols,
     Map<int, String>? photos,
     int? activeCell,
+    int? lastTakenCell,
     Map<int, CellQualityResult>? quality,
     Map<int, NeighbourMatchMetrics>? links,
+    bool? sending,
+    Object? sendError,
+    bool clearSendError = false,
   }) => FollowUpGridState(
     rows: rows ?? this.rows,
     cols: cols ?? this.cols,
     photos: photos ?? this.photos,
     activeCell: activeCell ?? this.activeCell,
+    lastTakenCell: lastTakenCell ?? this.lastTakenCell,
     quality: quality ?? this.quality,
     links: links ?? this.links,
+    sending: sending ?? this.sending,
+    sendError: clearSendError ? null : sendError ?? this.sendError,
   );
 }
 
@@ -108,7 +135,9 @@ class FollowUpGridCubit extends Cubit<FollowUpGridState> {
     if (state.photos.isNotEmpty) return;
     final nextRows = rows ?? state.rows;
     final nextCols = cols ?? state.cols;
-    if (_fits(nextRows, nextCols)) emit(state.copyWith(rows: nextRows, cols: nextCols));
+    // Back to the first cell: the active one may be outside a smaller grid,
+    // once every photograph has been deleted from a bigger one.
+    if (_fits(nextRows, nextCols)) emit(state.copyWith(rows: nextRows, cols: nextCols, activeCell: 0));
   }
 
   void select(int cell) => emit(state.copyWith(activeCell: cell));
@@ -124,17 +153,54 @@ class FollowUpGridCubit extends Cubit<FollowUpGridState> {
       state.copyWith(
         photos: photos,
         activeCell: _nextEmpty(cell, photos),
+        lastTakenCell: cell,
         quality: {...state.quality}..remove(cell),
         links: _withoutLinksOf(cell),
       ),
     );
 
-    if (replaced != null) {
-      final file = File(replaced);
-      if (await file.exists()) await file.delete();
-    }
+    if (replaced != null) await _deleteFile(replaced);
 
     await _score(cell, path);
+  }
+
+  /// Deletes [cell]'s photograph and selects the cell, so the next one taken
+  /// fills the gap. A score still running for it is dropped when it arrives.
+  Future<void> removePhoto(int cell) async {
+    final removed = state.photos[cell];
+    if (removed == null) return;
+
+    emit(
+      state.copyWith(
+        photos: {...state.photos}..remove(cell),
+        activeCell: cell,
+        quality: {...state.quality}..remove(cell),
+        links: _withoutLinksOf(cell),
+      ),
+    );
+
+    await _deleteFile(removed);
+  }
+
+  /// Hands the grid to [queue], and returns whether this call got it there: false
+  /// if it was already on its way, or if [queue] threw. Then [FollowUpGridState.sendError]
+  /// says why, and every photograph is still here to try again.
+  Future<bool> send(Future<void> Function(FollowUpGridState grid) queue) async {
+    if (state.sending) return false;
+    emit(state.copyWith(sending: true, clearSendError: true));
+    try {
+      await queue(state);
+      if (!isClosed) emit(state.copyWith(sending: false));
+      return true;
+    } catch (error) {
+      if (!isClosed) emit(state.copyWith(sending: false, sendError: error));
+      return false;
+    }
+  }
+
+  Future<void> _deleteFile(String path) async {
+    final file = File(path);
+    if (await file.exists()) await file.delete();
   }
 
   int _nextEmpty(int from, Map<int, String> photos) {

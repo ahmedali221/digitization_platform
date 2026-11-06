@@ -11,10 +11,13 @@ import '../../../../core/camera/capture_camera_session.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../../../core/theme/app_spacing.dart';
 import '../../../grid_capture/data/datasources/camera_preferences_local_data_source.dart';
+import '../widgets/captured_photo_review.dart';
+import '../widgets/captured_photo_thumbnail.dart';
 
 /// Takes several shots of one thing, kept in [folder], and pops with their
 /// paths. A hard-to-photograph surface usually needs a few tries, and choosing
-/// afterwards beats judging on a small screen in sunlight.
+/// afterwards beats judging on a small screen in sunlight. A shot can be opened
+/// from its thumbnail and deleted, to take another in its place.
 class FollowUpCameraPage extends StatefulWidget {
   const FollowUpCameraPage({super.key, required this.title, required this.folder});
 
@@ -31,8 +34,6 @@ class _FollowUpCameraPageState extends State<FollowUpCameraPage> {
 
   final CameraPreferencesLocalDataSource _preferences =
       GetIt.instance<CameraPreferencesLocalDataSource>();
-
-  static const double _thumbnailSize = 64;
 
   @override
   void initState() {
@@ -54,13 +55,22 @@ class _FollowUpCameraPageState extends State<FollowUpCameraPage> {
     if (mounted) setState(() {});
   }
 
-  Future<void> _shoot() => _camera.capture(_keep);
+  /// The volume key and Bluetooth remote still reach here under a preview or a
+  /// confirmation, where a photograph would be taken unseen.
+  Future<void> _shoot() async {
+    if (ModalRoute.isCurrentOf(context) ?? false) await _camera.capture(_keep);
+  }
 
   Future<void> _keep(XFile file) async {
     final name = 'shot_${_shots.length + 1}_${DateTime.now().millisecondsSinceEpoch}.jpg';
     final path = p.join(widget.folder, name);
     await file.saveTo(path);
     if (mounted) setState(() => _shots.add(path));
+  }
+
+  Future<void> _review(String path) async {
+    final decision = await reviewCapturedPhoto(context, path);
+    if (decision == CapturedPhotoDecision.delete && mounted) await _remove(path);
   }
 
   Future<void> _remove(String path) async {
@@ -133,16 +143,21 @@ class _FollowUpCameraPageState extends State<FollowUpCameraPage> {
                 children: [
                   Expanded(
                     child: SizedBox(
-                      height: _thumbnailSize,
+                      height: CapturedPhotoThumbnail.size,
                       child: ListView.separated(
                         scrollDirection: Axis.horizontal,
                         itemCount: _shots.length,
                         separatorBuilder: (_, _) => const SizedBox(width: AppSpacing.sm),
-                        itemBuilder: (context, index) => _ShotThumbnail(
-                          path: _shots[index],
-                          size: _thumbnailSize,
-                          onRemove: () => _remove(_shots[index]),
-                        ),
+                        // Newest first: this strip only fits a couple, and the
+                        // one just taken is the one to check.
+                        itemBuilder: (context, index) {
+                          final path = _shots[_shots.length - 1 - index];
+                          return CapturedPhotoThumbnail(
+                            key: ValueKey(path),
+                            path: path,
+                            onTap: _camera.capturing ? null : () => _review(path),
+                          );
+                        },
                       ),
                     ),
                   ),
@@ -165,49 +180,6 @@ class _FollowUpCameraPageState extends State<FollowUpCameraPage> {
             ),
           ],
         ),
-      ),
-    );
-  }
-}
-
-class _ShotThumbnail extends StatelessWidget {
-  const _ShotThumbnail({required this.path, required this.size, required this.onRemove});
-
-  final String path;
-  final double size;
-  final VoidCallback onRemove;
-
-  @override
-  Widget build(BuildContext context) {
-    return SizedBox(
-      width: size,
-      height: size,
-      child: Stack(
-        fit: StackFit.expand,
-        children: [
-          ClipRRect(
-            borderRadius: BorderRadius.circular(AppSpacing.sm),
-            // Shots are tens of megapixels and this tile is tiny: without
-            // cacheWidth the decoder builds a full-size bitmap just to shrink it.
-            child: Image.file(
-              File(path),
-              fit: BoxFit.cover,
-              cacheWidth: (size * MediaQuery.devicePixelRatioOf(context)).round(),
-            ),
-          ),
-          Positioned(
-            top: 0,
-            right: 0,
-            child: GestureDetector(
-              onTap: onRemove,
-              child: Container(
-                decoration: const BoxDecoration(color: AppColors.cameraScrim, shape: BoxShape.circle),
-                padding: const EdgeInsets.all(2),
-                child: const Icon(Icons.close, size: 14, color: Colors.white),
-              ),
-            ),
-          ),
-        ],
       ),
     );
   }

@@ -21,6 +21,7 @@ import '../cubit/capture_session_cubit.dart';
 import '../cubit/capture_session_state.dart';
 import '../widgets/camera_grid_navigator.dart';
 import '../widgets/grid_capture_metrics.dart';
+import '../../../../core/widgets/confirm_dialog.dart';
 import '../widgets/image_preview_dialog.dart';
 import '../widgets/quality_badge.dart';
 
@@ -154,7 +155,7 @@ class _CameraBodyState extends State<_CameraBody> {
   Future<void> _handleDeletePhoto(int cellId, String path) async {
     if (_camera.capturing || _camera.switchingLens || _deletingPaths.contains(path)) return;
     final confirmed = await _confirmDeletePhoto();
-    if (!mounted || confirmed != true) return;
+    if (!mounted || !confirmed) return;
     setState(() => _deletingPaths.add(path));
     try {
       await context.read<CaptureSessionCubit>().deletePhoto(cellId, path);
@@ -169,26 +170,12 @@ class _CameraBodyState extends State<_CameraBody> {
     }
   }
 
-  Future<bool?> _confirmDeletePhoto() {
-    return showDialog<bool>(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Delete photo?'),
-        content: const Text('This shot will be removed from the cell.'),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(context).pop(false),
-            child: const Text('Cancel'),
-          ),
-          TextButton(
-            onPressed: () => Navigator.of(context).pop(true),
-            child: Text(
-              'Delete',
-              style: TextStyle(color: AppColors.onDangerContainer),
-            ),
-          ),
-        ],
-      ),
+  Future<bool> _confirmDeletePhoto() {
+    return ConfirmDialog.show(
+      context,
+      title: 'Delete photo?',
+      message: 'This shot will be removed from the cell.',
+      confirmLabel: 'Delete',
     );
   }
 

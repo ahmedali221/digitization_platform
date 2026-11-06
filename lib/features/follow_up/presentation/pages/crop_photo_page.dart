@@ -7,6 +7,7 @@ import '../../../../core/theme/app_colors.dart';
 import '../../../../core/theme/app_spacing.dart';
 import '../../../../core/widgets/feedback_states.dart';
 import '../../../../core/widgets/primary_action_button.dart';
+import '../widgets/save_failed_notice.dart';
 
 /// The part of a photograph to keep, as fractions of it as displayed.
 class CropBox {
@@ -36,11 +37,13 @@ class CropBox {
 
 /// Crops a photograph to just the text. A whole-scene photo gives the index
 /// little to read, which is what most of the remaining failures come down to.
-/// Pops with the [CropBox].
+/// It stays open until [onSave] succeeds, so that a failure costs neither the
+/// photograph nor the crop, and pops with true when it has.
 class CropPhotoPage extends StatefulWidget {
-  const CropPhotoPage({super.key, required this.photoPath});
+  const CropPhotoPage({super.key, required this.photoPath, required this.onSave});
 
   final String photoPath;
+  final Future<void> Function(CropBox box) onSave;
 
   @override
   State<CropPhotoPage> createState() => _CropPhotoPageState();
@@ -49,6 +52,26 @@ class CropPhotoPage extends StatefulWidget {
 class _CropPhotoPageState extends State<CropPhotoPage> {
   CropBox _box = const CropBox(0.05, 0.05, 0.95, 0.95);
   double? _aspectRatio;
+  bool _saving = false;
+  Object? _saveError;
+
+  Future<void> _save() async {
+    final navigator = Navigator.of(context);
+    setState(() {
+      _saving = true;
+      _saveError = null;
+    });
+    try {
+      await widget.onSave(_box);
+      navigator.pop(true);
+    } catch (error) {
+      if (!mounted) return;
+      setState(() {
+        _saving = false;
+        _saveError = error;
+      });
+    }
+  }
 
   @override
   void initState() {
@@ -70,50 +93,61 @@ class _CropPhotoPageState extends State<CropPhotoPage> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(title: const Text('Crop to the text')),
-      body: SafeArea(
-        child: Column(
-          children: [
-            Expanded(
-              child: _aspectRatio == null
-                  ? const LoadingIndicator()
-                  : Center(
-                      child: Padding(
-                        padding: const EdgeInsets.all(AppSpacing.lg),
-                        child: AspectRatio(
-                          aspectRatio: _aspectRatio!,
-                          child: LayoutBuilder(
-                            builder: (context, constraints) => _CropArea(
-                              path: widget.photoPath,
-                              box: _box,
-                              size: constraints.biggest,
-                              onChanged: (box) => setState(() => _box = box),
+    // Leaving deletes the folder that the photograph is being saved from.
+    return PopScope(
+      canPop: !_saving,
+      child: Scaffold(
+        appBar: AppBar(title: const Text('Crop to the text')),
+        body: SafeArea(
+          child: Column(
+            children: [
+              Expanded(
+                child: _aspectRatio == null
+                    ? const LoadingIndicator()
+                    : Center(
+                        child: Padding(
+                          padding: const EdgeInsets.all(AppSpacing.lg),
+                          child: AspectRatio(
+                            aspectRatio: _aspectRatio!,
+                            child: LayoutBuilder(
+                              builder: (context, constraints) => _CropArea(
+                                path: widget.photoPath,
+                                box: _box,
+                                size: constraints.biggest,
+                                onChanged: (box) => setState(() => _box = box),
+                              ),
                             ),
                           ),
                         ),
                       ),
-                    ),
-            ),
-            Padding(
-              padding: const EdgeInsets.all(AppSpacing.lg),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  Text(
-                    'Drag the corners close around the text.',
-                    textAlign: TextAlign.center,
-                    style: Theme.of(context).textTheme.bodySmall?.copyWith(color: AppColors.onSurfaceMuted),
-                  ),
-                  const SizedBox(height: AppSpacing.sm),
-                  PrimaryActionButton(
-                    label: 'Use this crop',
-                    onTap: () => Navigator.of(context).pop(_box),
-                  ),
-                ],
               ),
-            ),
-          ],
+              Padding(
+                padding: const EdgeInsets.all(AppSpacing.lg),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    Text(
+                      'Drag the corners close around the text.',
+                      textAlign: TextAlign.center,
+                      style: Theme.of(context).textTheme.bodySmall?.copyWith(color: AppColors.onSurfaceMuted),
+                    ),
+                    const SizedBox(height: AppSpacing.sm),
+                    if (_saveError != null) ...[
+                      SaveFailedNotice(
+                        message: 'The photograph could not be saved, but it is still here. Try again. ($_saveError)',
+                      ),
+                      const SizedBox(height: AppSpacing.sm),
+                    ],
+                    PrimaryActionButton(
+                      label: _saving ? 'Saving…' : 'Use this crop',
+                      enabled: !_saving,
+                      onTap: _save,
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
         ),
       ),
     );

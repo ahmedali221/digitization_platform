@@ -215,6 +215,12 @@ class FollowUpRepositoryImpl implements FollowUpRepository {
   }
 
   @override
+  Future<void> deleteShotsFolder(String folder) async {
+    final directory = Directory(folder);
+    if (await directory.exists()) await directory.delete(recursive: true);
+  }
+
+  @override
   Future<void> queueAnnotationCapture({
     required FollowUpPackage package,
     required FollowUpAnnotation annotation,
@@ -237,39 +243,49 @@ class FollowUpRepositoryImpl implements FollowUpRepository {
     required Map<int, String> photos,
   }) async {
     final itemKey = annotation.id.toString();
-    await _discardUnsent(package.siteId, FollowUpUploadRecord.kindAnnotationGrid, itemKey);
-
     final token = _uuid.v4();
     final captures = await _directories.followUpDir(package.siteId, _capturesFolder);
-
-    final tiles = <GridTile>[];
-    for (final entry in photos.entries) {
-      final row = entry.key ~/ cols;
-      final col = entry.key % cols;
-      final file = await File(entry.value).copy(p.join(captures.path, '${token}_r${row}c$col.jpg'));
-      tiles.add(GridTile(row: row, col: col, path: file.path, sha256: await _sha256(file)));
-    }
-
     final previews = await _directories.followUpDir(package.siteId, previewsFolder);
-    final now = DateTime.now();
+    final montagePath = p.join(previews.path, '$token.jpg');
+    final written = <String>[montagePath];
 
-    await _local.put(
-      FollowUpUploadRecord(
-        token: token,
-        kind: FollowUpUploadRecord.kindAnnotationGrid,
-        siteId: package.siteId,
-        packageId: package.id,
-        itemKey: itemKey,
-        label: annotation.referenceCode,
-        filePath: '',
-        sha256: '',
-        capturedAt: now,
-        createdAt: now,
-        rows: rows,
-        cols: cols,
-        previewPath: await _makeMontage(tiles, rows, cols, p.join(previews.path, '$token.jpg')),
-      )..tiles = tiles,
-    );
+    try {
+      final tiles = <GridTile>[];
+      for (final entry in photos.entries) {
+        final row = entry.key ~/ cols;
+        final col = entry.key % cols;
+        final copyPath = p.join(captures.path, '${token}_r${row}c$col.jpg');
+        written.add(copyPath);
+        final file = await File(entry.value).copy(copyPath);
+        tiles.add(GridTile(row: row, col: col, path: file.path, sha256: await _sha256(file)));
+      }
+      final previewPath = await _makeMontage(tiles, rows, cols, montagePath);
+      final now = DateTime.now();
+
+      // Not before the copies: running out of space must not cost the older one
+      // too. And not after the new record, or a drain could send them both.
+      await _discardUnsent(package.siteId, FollowUpUploadRecord.kindAnnotationGrid, itemKey);
+      await _local.put(
+        FollowUpUploadRecord(
+          token: token,
+          kind: FollowUpUploadRecord.kindAnnotationGrid,
+          siteId: package.siteId,
+          packageId: package.id,
+          itemKey: itemKey,
+          label: annotation.referenceCode,
+          filePath: '',
+          sha256: '',
+          capturedAt: now,
+          createdAt: now,
+          rows: rows,
+          cols: cols,
+          previewPath: previewPath,
+        )..tiles = tiles,
+      );
+    } catch (_) {
+      await _deleteFiles(written);
+      rethrow;
+    }
 
     unawaited(_runner.drainAll());
   }
@@ -363,34 +379,44 @@ class FollowUpRepositoryImpl implements FollowUpRepository {
     String? suggestedCornersJson,
     TargetWidth? width,
   }) async {
-    await _discardUnsent(siteId, kind, itemKey);
-
     final token = _uuid.v4();
     final captures = await _directories.followUpDir(siteId, _capturesFolder);
-    final file = await File(photoPath).copy(p.join(captures.path, '$token.jpg'));
-    final preview = await _makePreview(siteId, token, file.path);
-    final now = DateTime.now();
+    final copyPath = p.join(captures.path, '$token.jpg');
+    final written = <String?>[copyPath];
 
-    await _local.put(
-      FollowUpUploadRecord(
-        token: token,
-        kind: kind,
-        siteId: siteId,
-        packageId: packageId,
-        itemKey: itemKey,
-        label: label,
-        filePath: file.path,
-        sha256: await _sha256(file),
-        capturedAt: now,
-        videoMatchJson: videoMatchJson,
-        warningConfirmed: warningConfirmed,
-        suggestedCornersJson: suggestedCornersJson,
-        createdAt: now,
-        physicalWidthM: width == null ? null : _rounded(width.meters),
-        widthSource: width?.source,
-        previewPath: preview,
-      ),
-    );
+    try {
+      final file = await File(photoPath).copy(copyPath);
+      final preview = await _makePreview(siteId, token, file.path);
+      written.add(preview);
+      final sha256 = await _sha256(file);
+      final now = DateTime.now();
+
+      // See queueAnnotationGrid for why it's exactly here.
+      await _discardUnsent(siteId, kind, itemKey);
+      await _local.put(
+        FollowUpUploadRecord(
+          token: token,
+          kind: kind,
+          siteId: siteId,
+          packageId: packageId,
+          itemKey: itemKey,
+          label: label,
+          filePath: file.path,
+          sha256: sha256,
+          capturedAt: now,
+          videoMatchJson: videoMatchJson,
+          warningConfirmed: warningConfirmed,
+          suggestedCornersJson: suggestedCornersJson,
+          createdAt: now,
+          physicalWidthM: width == null ? null : _rounded(width.meters),
+          widthSource: width?.source,
+          previewPath: preview,
+        ),
+      );
+    } catch (_) {
+      await _deleteFiles(written);
+      rethrow;
+    }
 
     unawaited(_runner.drainAll());
   }
@@ -425,12 +451,16 @@ class FollowUpRepositoryImpl implements FollowUpRepository {
               r.status == FollowUpUploadRecord.statusFailed),
     );
     for (final record in stale.toList()) {
-      for (final path in [record.filePath, record.previewPath, for (final tile in record.tiles) tile.path]) {
-        if (path == null || path.isEmpty) continue;
-        final file = File(path);
-        if (await file.exists()) await file.delete();
-      }
+      await _deleteFiles([record.filePath, record.previewPath, for (final tile in record.tiles) tile.path]);
       await _local.delete(record.token);
+    }
+  }
+
+  Future<void> _deleteFiles(Iterable<String?> paths) async {
+    for (final path in paths) {
+      if (path == null || path.isEmpty) continue;
+      final file = File(path);
+      if (await file.exists()) await file.delete();
     }
   }
 

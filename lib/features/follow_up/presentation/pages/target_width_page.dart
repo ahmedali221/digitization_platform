@@ -7,6 +7,7 @@ import '../../../../core/theme/app_colors.dart';
 import '../../../../core/theme/app_spacing.dart';
 import '../../../../core/widgets/primary_action_button.dart';
 import '../../domain/entities/target_width.dart';
+import '../widgets/save_failed_notice.dart';
 
 /// Asks how wide a target is, by AR or typed from a tape. There is no way past
 /// this without a width: every target needs one.
@@ -15,17 +16,22 @@ import '../../domain/entities/target_width.dart';
 /// reviewer straightens a new photograph to the same framing, so the edges of
 /// this picture are the edges of the final target, and any wall around them that
 /// a new photograph caught isn't part of the width.
+///
+/// It stays open until [onSave] succeeds, so that a failure costs neither the
+/// measurement nor any photograph, and pops with the width when it has.
 class TargetWidthPage extends StatefulWidget {
   const TargetWidthPage({
     super.key,
     required this.title,
     required this.imagePath,
+    required this.onSave,
     this.discardsPhotograph = false,
     this.currentMeters,
   });
 
   final String title;
   final String imagePath;
+  final Future<void> Function(TargetWidth width) onSave;
 
   /// Leaving here loses a photograph just taken, so it asks first.
   final bool discardsPhotograph;
@@ -48,6 +54,11 @@ class _TargetWidthPageState extends State<TargetWidthPage> {
   String? _arProblem;
   String? _typedError;
   late bool _askingAboutCurrent = widget.currentMeters != null;
+
+  /// A width being saved, or that failed to: kept so it needn't be measured again.
+  TargetWidth? _unsaved;
+  bool _saving = false;
+  Object? _saveError;
 
   @override
   void initState() {
@@ -72,6 +83,25 @@ class _TargetWidthPageState extends State<TargetWidthPage> {
     });
   }
 
+  Future<void> _save(TargetWidth width) async {
+    final navigator = Navigator.of(context);
+    setState(() {
+      _unsaved = width;
+      _saving = true;
+      _saveError = null;
+    });
+    try {
+      await widget.onSave(width);
+      navigator.pop(width);
+    } catch (error) {
+      if (!mounted) return;
+      setState(() {
+        _saving = false;
+        _saveError = error;
+      });
+    }
+  }
+
   Future<void> _measure() async {
     setState(() => _measuring = true);
     final result = await ArMeasureChannel.measure();
@@ -82,7 +112,7 @@ class _TargetWidthPageState extends State<TargetWidthPage> {
       case ArMeasureStatus.measured:
         final meters = result.meters!;
         if (TargetWidth.isValid(meters)) {
-          Navigator.of(context).pop(TargetWidth(meters, TargetWidth.sourceAr));
+          await _save(TargetWidth(meters, TargetWidth.sourceAr));
         } else {
           setState(() => _arProblem = 'That measured ${TargetWidth.format(meters)}, which can’t be right. Measure again.');
         }
@@ -97,7 +127,7 @@ class _TargetWidthPageState extends State<TargetWidthPage> {
     }
   }
 
-  void _useTyped() {
+  Future<void> _useTyped() async {
     final meters = TargetWidth.parseMeters(_typed.text);
     if (meters == null) {
       setState(() {
@@ -106,7 +136,7 @@ class _TargetWidthPageState extends State<TargetWidthPage> {
       });
       return;
     }
-    Navigator.of(context).pop(TargetWidth(meters, TargetWidth.sourceManual));
+    await _save(TargetWidth(meters, TargetWidth.sourceManual));
   }
 
   Future<void> _confirmLeave() async {
@@ -139,7 +169,7 @@ class _TargetWidthPageState extends State<TargetWidthPage> {
       PrimaryActionButton(
         icon: Icons.check,
         label: 'Use ${TargetWidth.format(meters)}',
-        onTap: () => Navigator.of(context).pop(TargetWidth(meters, TargetWidth.sourceExisting)),
+        onTap: () => _save(TargetWidth(meters, TargetWidth.sourceExisting)),
       ),
       const SizedBox(height: AppSpacing.sm),
       OutlinedButton.icon(
@@ -150,14 +180,41 @@ class _TargetWidthPageState extends State<TargetWidthPage> {
     ];
   }
 
+  /// In place of the ways to measure, once there's a width: saving, or retrying.
+  List<Widget> _unsavedWidth(TargetWidth width, TextTheme textTheme) {
+    return [
+      Text('Width: ${TargetWidth.format(width.meters)}', style: textTheme.titleMedium),
+      const SizedBox(height: AppSpacing.md),
+      if (_saveError != null) ...[
+        SaveFailedNotice(message: 'It could not be saved, but nothing has been lost. Try again. ($_saveError)'),
+        const SizedBox(height: AppSpacing.md),
+      ],
+      PrimaryActionButton(
+        label: _saving ? 'Saving…' : 'Try again',
+        enabled: !_saving,
+        onTap: () => _save(width),
+      ),
+      if (!_saving)
+        TextButton(
+          onPressed: () => setState(() {
+            _unsaved = null;
+            _saveError = null;
+          }),
+          child: const Text('Change the width'),
+        ),
+    ];
+  }
+
   @override
   Widget build(BuildContext context) {
     final textTheme = Theme.of(context).textTheme;
+    final unsaved = _unsaved;
 
     return PopScope(
-      canPop: !widget.discardsPhotograph,
+      canPop: !widget.discardsPhotograph && !_saving,
       onPopInvokedWithResult: (didPop, _) {
-        if (!didPop) _confirmLeave();
+        // While saving, leaving would delete the folder it's being saved from.
+        if (!didPop && !_saving) _confirmLeave();
       },
       child: Scaffold(
         appBar: AppBar(title: Text(widget.title)),
@@ -178,7 +235,8 @@ class _TargetWidthPageState extends State<TargetWidthPage> {
                 child: Image.file(File(widget.imagePath), cacheWidth: 1000),
               ),
               const SizedBox(height: AppSpacing.lg),
-              if (_askingAboutCurrent) ..._currentWidthChoice(widget.currentMeters!, textTheme)
+              if (unsaved != null) ..._unsavedWidth(unsaved, textTheme)
+              else if (_askingAboutCurrent) ..._currentWidthChoice(widget.currentMeters!, textTheme)
               else ...[
               if (_arProblem != null) ...[
                 Text(_arProblem!, style: textTheme.bodySmall?.copyWith(color: AppColors.onWarningContainer)),

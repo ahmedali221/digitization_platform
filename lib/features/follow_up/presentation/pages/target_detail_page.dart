@@ -65,18 +65,23 @@ class _TargetDetailPageState extends State<TargetDetailPage> {
   /// Measures the target as it stands, with no new photograph.
   Future<void> _measureOnly(String imagePath) async {
     final messenger = ScaffoldMessenger.of(context);
-    final width = await Navigator.of(context).push<TargetWidth>(
-      MaterialPageRoute(builder: (_) => TargetWidthPage(title: widget.target.label, imagePath: imagePath)),
+    final saved = await Navigator.of(context).push<TargetWidth>(
+      MaterialPageRoute(
+        builder: (_) => TargetWidthPage(
+          title: widget.target.label,
+          imagePath: imagePath,
+          onSave: (width) => _repository.queueTargetWidth(
+            package: widget.package,
+            target: widget.target,
+            width: width,
+          ),
+        ),
+      ),
     );
-    if (width == null) return;
+    if (saved == null) return;
 
-    try {
-      await _repository.queueTargetWidth(package: widget.package, target: widget.target, width: width);
-      messenger.showSnackBar(SnackBar(content: Text('Width saved: ${TargetWidth.format(width.meters)}.')));
-      if (mounted) setState(() {});
-    } catch (error) {
-      messenger.showSnackBar(SnackBar(content: Text('The width could not be saved: $error')));
-    }
+    messenger.showSnackBar(SnackBar(content: Text('Width saved: ${TargetWidth.format(saved.meters)}.')));
+    if (mounted) setState(() {});
   }
 
   Future<void> _replace(String imagePath, String? framePath) async {
@@ -84,67 +89,77 @@ class _TargetDetailPageState extends State<TargetDetailPage> {
     final messenger = ScaffoldMessenger.of(context);
     final folder = await _repository.newShotsFolder(widget.package.siteId);
 
-    while (mounted) {
-      final shots = await navigator.push<List<String>>(
-        MaterialPageRoute(builder: (_) => FollowUpCameraPage(title: widget.target.label, folder: folder)),
-      );
-      if (shots == null || shots.isEmpty) return;
+    try {
+      while (mounted) {
+        final shots = await navigator.push<List<String>>(
+          MaterialPageRoute(builder: (_) => FollowUpCameraPage(title: widget.target.label, folder: folder)),
+        );
+        if (shots == null || shots.isEmpty) return;
 
-      final chosen = await navigator.push<String>(
-        MaterialPageRoute(builder: (_) => ShotReviewPage(shots: shots)),
-      );
-      if (chosen == null) return;
+        final chosen = await navigator.push<String>(
+          MaterialPageRoute(builder: (_) => ShotReviewPage(shots: shots)),
+        );
+        if (chosen == null) return;
 
-      setState(() => _working = true);
-      try {
-        final match = framePath == null
-            ? null
-            : await compute(
-                matchTargetToVideoFrame,
-                TargetMatchRequest(photoPath: chosen, framePath: framePath),
-              );
-
-        var warningConfirmed = false;
-        if (match != null && !match.matched) {
-          if (!mounted) return;
-          final send = await _confirmMismatch(chosen, framePath!, match);
-          if (send != true) continue;
-          warningConfirmed = true;
-        }
+        final check = await _checkAgainstVideo(chosen, framePath);
+        if (check == null) continue;
 
         // Last, so a retake never costs a measurement.
-        final width = await navigator.push<TargetWidth>(
+        final saved = await navigator.push<TargetWidth>(
           MaterialPageRoute(
             builder: (_) => TargetWidthPage(
               title: widget.target.label,
               imagePath: imagePath,
               discardsPhotograph: true,
               currentMeters: _currentWidth,
+              onSave: (width) => _repository.queueTargetCapture(
+                package: widget.package,
+                target: widget.target,
+                photoPath: chosen,
+                match: check.match,
+                warningConfirmed: check.warningConfirmed,
+                width: width,
+              ),
             ),
           ),
         );
-        if (width == null) return;
-
-        await _repository.queueTargetCapture(
-          package: widget.package,
-          target: widget.target,
-          photoPath: chosen,
-          match: match,
-          warningConfirmed: warningConfirmed,
-          width: width,
-        );
-        await Directory(folder).delete(recursive: true);
-        messenger.showSnackBar(
-          const SnackBar(content: Text('Saved. It will be reviewed on the dashboard before anything changes.')),
-        );
+        if (saved != null) {
+          messenger.showSnackBar(
+            const SnackBar(content: Text('Saved. It will be reviewed on the dashboard before anything changes.')),
+          );
+        }
         return;
-      } catch (error) {
-        messenger.showSnackBar(SnackBar(content: Text('The photograph could not be saved: $error')));
-        return;
-      } finally {
-        if (mounted) setState(() => _working = false);
       }
+    } catch (error) {
+      messenger.showSnackBar(SnackBar(content: Text('The photograph could not be checked against the video: $error')));
+    } finally {
+      await _repository.deleteShotsFolder(folder);
     }
+  }
+
+  /// What comparing the photograph with the video found, and whether the operator
+  /// chose to send it despite a mismatch. Null when they'd rather retake it.
+  Future<({TargetMatchResult? match, bool warningConfirmed})?> _checkAgainstVideo(
+    String photoPath,
+    String? framePath,
+  ) async {
+    if (framePath == null) return (match: null, warningConfirmed: false);
+
+    setState(() => _working = true);
+    final TargetMatchResult match;
+    try {
+      match = await compute(
+        matchTargetToVideoFrame,
+        TargetMatchRequest(photoPath: photoPath, framePath: framePath),
+      );
+    } finally {
+      if (mounted) setState(() => _working = false);
+    }
+
+    if (match.matched) return (match: match, warningConfirmed: false);
+    if (!mounted) return null;
+    final send = await _confirmMismatch(photoPath, framePath, match);
+    return send == true ? (match: match, warningConfirmed: true) : null;
   }
 
   Future<bool?> _confirmMismatch(String photoPath, String framePath, TargetMatchResult match) {

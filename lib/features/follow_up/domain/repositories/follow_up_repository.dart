@@ -28,8 +28,12 @@ abstract class FollowUpRepository {
   /// A folder for the shots of one photograph session.
   Future<String> newShotsFolder(String siteId);
 
+  /// Deletes such a folder, once its photographs are queued or dropped.
+  Future<void> deleteShotsFolder(String folder);
+
   /// Queues a photograph of an annotation, in place of any earlier one of it
-  /// that hasn't been sent yet, and tries to send it.
+  /// that hasn't been sent yet, and tries to send it. If it throws, [photoPath]
+  /// and any earlier photograph are as they were, so it can be tried again.
   Future<void> queueAnnotationCapture({
     required FollowUpPackage package,
     required FollowUpAnnotation annotation,
@@ -39,6 +43,8 @@ abstract class FollowUpRepository {
   /// Queues a grid of photographs of an annotation, for the dashboard to stitch,
   /// in place of any earlier photograph of it that hasn't been sent. [photos] is
   /// keyed by cell, row by row, and has one for every cell of [rows] by [cols].
+  /// If it throws, [photos] and any earlier photograph are as they were, so it
+  /// can be tried again.
   Future<void> queueAnnotationGrid({
     required FollowUpPackage package,
     required FollowUpAnnotation annotation,

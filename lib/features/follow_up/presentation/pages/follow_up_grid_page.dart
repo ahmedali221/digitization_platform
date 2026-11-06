@@ -1,5 +1,4 @@
 import 'dart:async';
-import 'dart:io';
 
 import 'package:camera/camera.dart';
 import 'package:flutter/material.dart';
@@ -20,34 +19,29 @@ import '../../../grid_capture/presentation/widgets/grid_cell_tile.dart';
 import '../../../grid_capture/presentation/widgets/grid_stepper_row.dart';
 import '../../../grid_capture/presentation/widgets/linked_coverage_grid.dart';
 import '../cubit/follow_up_grid_cubit.dart';
-
-/// What [FollowUpGridPage] pops with, once every cell has its photograph.
-class FollowUpGridResult {
-  const FollowUpGridResult({required this.rows, required this.cols, required this.photos});
-
-  final int rows;
-  final int cols;
-
-  /// Keyed by cell, row by row.
-  final Map<int, String> photos;
-}
+import '../widgets/captured_photo_review.dart';
+import '../widgets/captured_photo_thumbnail.dart';
+import '../widgets/save_failed_notice.dart';
 
 /// A grid of photographs of something too long for one sharp shot: choose its
 /// size, photograph each cell, check they overlap, and send them to be stitched.
 ///
 /// The photographs stay in [folder], in the app's own storage, with no copy in
-/// the gallery, which is the caller's to delete afterwards.
+/// the gallery, which is the caller's to delete once this page has closed. It
+/// stays open until [onSend] succeeds, so that a failure costs no photographs,
+/// and pops with true when it has.
 class FollowUpGridPage extends StatelessWidget {
-  const FollowUpGridPage({super.key, required this.title, required this.folder});
+  const FollowUpGridPage({super.key, required this.title, required this.folder, required this.onSend});
 
   final String title;
   final String folder;
+  final Future<void> Function(FollowUpGridState grid) onSend;
 
   @override
   Widget build(BuildContext context) {
     return BlocProvider(
       create: (_) => FollowUpGridCubit(GetIt.instance<CellQualityAnalyzer>()),
-      child: _GridBody(title: title, folder: folder),
+      child: _GridBody(title: title, folder: folder, onSend: onSend),
     );
   }
 }
@@ -55,10 +49,17 @@ class FollowUpGridPage extends StatelessWidget {
 String _cellName(int cell, int cols) => 'R${cell ~/ cols + 1}C${cell % cols + 1}';
 
 class _GridBody extends StatelessWidget {
-  const _GridBody({required this.title, required this.folder});
+  const _GridBody({required this.title, required this.folder, required this.onSend});
 
   final String title;
   final String folder;
+  final Future<void> Function(FollowUpGridState grid) onSend;
+
+  Future<void> _send(BuildContext context) async {
+    final cubit = context.read<FollowUpGridCubit>();
+    final navigator = Navigator.of(context);
+    if (await cubit.send(onSend)) navigator.pop(true);
+  }
 
   Future<void> _openCamera(BuildContext context) => Navigator.of(context).push<void>(
     MaterialPageRoute(
@@ -92,14 +93,19 @@ class _GridBody extends StatelessWidget {
         return PopScope(
           canPop: state.photos.isEmpty,
           onPopInvokedWithResult: (didPop, _) {
-            if (!didPop) unawaited(_confirmLeaving(context));
+            // Leaving deletes the folder that the photographs are being copied from.
+            if (!didPop && !state.sending) unawaited(_confirmLeaving(context));
           },
           child: Scaffold(
             appBar: AppBar(title: Text(title)),
             body: SafeArea(
               child: state.photos.isEmpty
                   ? _ChooseSize(state: state, onStart: () => _openCamera(context))
-                  : _Review(state: state, onOpenCamera: () => _openCamera(context)),
+                  : _Review(
+                      state: state,
+                      onOpenCamera: () => _openCamera(context),
+                      onSend: () => _send(context),
+                    ),
             ),
           ),
         );
@@ -150,17 +156,43 @@ class _ChooseSize extends StatelessWidget {
   }
 }
 
-/// Every cell and how its neighbours join, before anything is sent. A cell is
-/// tapped to photograph it again.
+/// Every cell and how its neighbours join, before anything is sent. A cell with
+/// a photograph opens it, to delete or retake; an empty one opens the camera.
 class _Review extends StatelessWidget {
-  const _Review({required this.state, required this.onOpenCamera});
+  const _Review({required this.state, required this.onOpenCamera, required this.onSend});
 
   final FollowUpGridState state;
   final VoidCallback onOpenCamera;
+  final VoidCallback onSend;
+
+  void _photograph(FollowUpGridCubit cubit, int cell) {
+    cubit.select(cell);
+    onOpenCamera();
+  }
+
+  Future<void> _openCell(BuildContext context, int cell) async {
+    final cubit = context.read<FollowUpGridCubit>();
+    final path = state.photos[cell];
+    if (path == null) return _photograph(cubit, cell);
+
+    final decision = await reviewCapturedPhoto(
+      context,
+      path,
+      label: _cellName(cell, state.cols),
+      canRetake: true,
+    );
+    switch (decision) {
+      case CapturedPhotoDecision.delete:
+        await cubit.removePhoto(cell);
+      case CapturedPhotoDecision.retake:
+        _photograph(cubit, cell);
+      case null:
+        break;
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
-    final cubit = context.read<FollowUpGridCubit>();
     final textTheme = Theme.of(context).textTheme;
     final weak = state.weakLinks;
     final missing = state.cellCount - state.photos.length;
@@ -183,10 +215,7 @@ class _Review extends StatelessWidget {
                 mode: GridCellMode.review,
                 qualityTier: quality?.tier,
                 qualityScore: quality?.cellScore.round(),
-                onTap: () {
-                  cubit.select(cell);
-                  onOpenCamera();
-                },
+                onTap: state.sending ? null : () => _openCell(context, cell),
               );
             },
           ),
@@ -206,9 +235,17 @@ class _Review extends StatelessWidget {
                   child: Text(
                     'Not enough overlap: '
                     '${weak.map((link) => '${_cellName(link.from, state.cols)} and ${_cellName(link.to, state.cols)}').join(', ')}. '
-                    'Tap one to photograph it again.',
+                    'Tap one to check or retake it.',
                     style: textTheme.bodySmall?.copyWith(color: AppColors.onWarningContainer),
                   ),
+                ),
+                const SizedBox(height: AppSpacing.md),
+              ],
+              if (state.sendError != null) ...[
+                SaveFailedNotice(
+                  message:
+                      'The photographs could not be saved, but they are still here. '
+                      'Try again. (${state.sendError})',
                 ),
                 const SizedBox(height: AppSpacing.md),
               ],
@@ -221,10 +258,13 @@ class _Review extends StatelessWidget {
               else
                 PrimaryActionButton(
                   icon: Icons.upload,
-                  label: weak.isEmpty ? 'Send to be stitched' : 'Send anyway',
-                  onTap: () => Navigator.of(context).pop(
-                    FollowUpGridResult(rows: state.rows, cols: state.cols, photos: state.photos),
-                  ),
+                  label: state.sending
+                      ? 'Saving…'
+                      : weak.isEmpty
+                      ? 'Send to be stitched'
+                      : 'Send anyway',
+                  enabled: !state.sending,
+                  onTap: onSend,
                 ),
             ],
           ),
@@ -235,7 +275,8 @@ class _Review extends StatelessWidget {
 }
 
 /// The camera, with a strip of the grid's cells under it. It moves to the next
-/// empty cell by itself, and closes back to the review when none are left.
+/// empty cell by itself, and closes back to the review when none are left. The
+/// thumbnail beside the shutter opens a photograph, to delete it and take another.
 class _GridCameraPage extends StatefulWidget {
   const _GridCameraPage({required this.title, required this.folder});
 
@@ -269,7 +310,12 @@ class _GridCameraPageState extends State<_GridCameraPage> {
     if (mounted) setState(() {});
   }
 
-  Future<void> _shoot() => _camera.capture(_keep);
+  /// The volume key and Bluetooth remote still reach here under a preview or a
+  /// confirmation, where a photograph would be taken unseen, and the last cell's
+  /// would close that dialog instead of this page.
+  Future<void> _shoot() async {
+    if (ModalRoute.isCurrentOf(context) ?? false) await _camera.capture(_keep);
+  }
 
   Future<void> _keep(XFile file) async {
     final cubit = context.read<FollowUpGridCubit>();
@@ -280,6 +326,16 @@ class _GridCameraPageState extends State<_GridCameraPage> {
     final wasIncomplete = !cubit.state.isComplete;
     unawaited(cubit.addPhoto(path));
     if (wasIncomplete && cubit.state.isComplete && mounted) navigator.pop();
+  }
+
+  Future<void> _reviewCell(FollowUpGridState state, int cell) async {
+    final cubit = context.read<FollowUpGridCubit>();
+    final decision = await reviewCapturedPhoto(
+      context,
+      state.photos[cell]!,
+      label: _cellName(cell, state.cols),
+    );
+    if (decision == CapturedPhotoDecision.delete) await cubit.removePhoto(cell);
   }
 
   @override
@@ -294,6 +350,7 @@ class _GridCameraPageState extends State<_GridCameraPage> {
   Widget build(BuildContext context) {
     final cubit = context.watch<FollowUpGridCubit>();
     final state = cubit.state;
+    final reviewableCell = state.reviewableCell;
     return Scaffold(
       backgroundColor: AppColors.cameraBackground,
       body: SafeArea(
@@ -360,7 +417,18 @@ class _GridCameraPageState extends State<_GridCameraPage> {
               padding: const EdgeInsets.all(AppSpacing.lg),
               child: Row(
                 children: [
-                  const Spacer(),
+                  Expanded(
+                    child: Align(
+                      alignment: Alignment.centerLeft,
+                      child: reviewableCell == null
+                          ? null
+                          : CapturedPhotoThumbnail(
+                              path: state.photos[reviewableCell]!,
+                              label: _cellName(reviewableCell, state.cols),
+                              onTap: _camera.capturing ? null : () => _reviewCell(state, reviewableCell),
+                            ),
+                    ),
+                  ),
                   CameraShutterButton(onTap: _camera.canShoot ? _shoot : null),
                   Expanded(
                     child: Align(
@@ -379,10 +447,4 @@ class _GridCameraPageState extends State<_GridCameraPage> {
       ),
     );
   }
-}
-
-/// Deletes a grid's folder, for callers once its photographs are queued or dropped.
-Future<void> deleteGridFolder(String folder) async {
-  final directory = Directory(folder);
-  if (await directory.exists()) await directory.delete(recursive: true);
 }

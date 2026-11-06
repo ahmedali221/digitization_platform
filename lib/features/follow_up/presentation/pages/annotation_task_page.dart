@@ -1,5 +1,4 @@
 import 'dart:async';
-import 'dart:io';
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
@@ -16,6 +15,7 @@ import '../../domain/entities/follow_up_package.dart';
 import '../../domain/entities/follow_up_uploads.dart';
 import '../../domain/repositories/follow_up_repository.dart';
 import '../../domain/services/shot_processing.dart';
+import '../cubit/follow_up_grid_cubit.dart';
 import '../widgets/labelled_photo.dart';
 import '../widgets/outlined_wall_picture.dart';
 import 'crop_photo_page.dart';
@@ -64,47 +64,50 @@ class _AnnotationTaskPageState extends State<AnnotationTaskPage> {
     final siteId = widget.package.siteId;
     final folder = await _repository.newShotsFolder(siteId);
 
-    final shots = await navigator.push<List<String>>(
-      MaterialPageRoute(builder: (_) => FollowUpCameraPage(title: widget.annotation.referenceCode, folder: folder)),
-    );
-    if (shots == null || shots.isEmpty) return;
-
-    final chosen = await navigator.push<String>(
-      MaterialPageRoute(builder: (_) => ShotReviewPage(shots: shots)),
-    );
-    if (chosen == null) return;
-
-    final box = await navigator.push<CropBox>(
-      MaterialPageRoute(builder: (_) => CropPhotoPage(photoPath: chosen)),
-    );
-    if (box == null) return;
-
-    setState(() => _working = true);
     try {
-      final cropped = p.join(folder, 'cropped.jpg');
-      await compute(
-        cropPhoto,
-        CropRequest(
-          sourcePath: chosen,
-          targetPath: cropped,
-          left: box.left,
-          top: box.top,
-          right: box.right,
-          bottom: box.bottom,
+      final shots = await navigator.push<List<String>>(
+        MaterialPageRoute(builder: (_) => FollowUpCameraPage(title: widget.annotation.referenceCode, folder: folder)),
+      );
+      if (shots == null || shots.isEmpty) return;
+
+      final chosen = await navigator.push<String>(
+        MaterialPageRoute(builder: (_) => ShotReviewPage(shots: shots)),
+      );
+      if (chosen == null) return;
+
+      final saved = await navigator.push<bool>(
+        MaterialPageRoute(
+          builder: (_) => CropPhotoPage(
+            photoPath: chosen,
+            onSave: (box) => _saveCrop(chosen, p.join(folder, 'cropped.jpg'), box),
+          ),
         ),
       );
-      await _repository.queueAnnotationCapture(
-        package: widget.package,
-        annotation: widget.annotation,
-        photoPath: cropped,
-      );
-      await Directory(folder).delete(recursive: true);
-      messenger.showSnackBar(const SnackBar(content: Text('Saved. It will be sent when there is a connection.')));
-    } catch (error) {
-      messenger.showSnackBar(SnackBar(content: Text('The photograph could not be saved: $error')));
+      if (saved ?? false) {
+        messenger.showSnackBar(const SnackBar(content: Text('Saved. It will be sent when there is a connection.')));
+      }
     } finally {
-      if (mounted) setState(() => _working = false);
+      await _repository.deleteShotsFolder(folder);
     }
+  }
+
+  Future<void> _saveCrop(String sourcePath, String croppedPath, CropBox box) async {
+    await compute(
+      cropPhoto,
+      CropRequest(
+        sourcePath: sourcePath,
+        targetPath: croppedPath,
+        left: box.left,
+        top: box.top,
+        right: box.right,
+        bottom: box.bottom,
+      ),
+    );
+    await _repository.queueAnnotationCapture(
+      package: widget.package,
+      annotation: widget.annotation,
+      photoPath: croppedPath,
+    );
   }
 
   Future<void> _takeGrid() async {
@@ -113,29 +116,30 @@ class _AnnotationTaskPageState extends State<AnnotationTaskPage> {
     final folder = await _repository.newShotsFolder(widget.package.siteId);
 
     try {
-      final grid = await navigator.push<FollowUpGridResult>(
+      final queued = await navigator.push<bool>(
         MaterialPageRoute(
-          builder: (_) => FollowUpGridPage(title: widget.annotation.referenceCode, folder: folder),
+          builder: (_) => FollowUpGridPage(
+            title: widget.annotation.referenceCode,
+            folder: folder,
+            onSend: _queueGrid,
+          ),
         ),
       );
-      if (grid == null) return;
-
-      setState(() => _working = true);
-      await _repository.queueAnnotationGrid(
-        package: widget.package,
-        annotation: widget.annotation,
-        rows: grid.rows,
-        cols: grid.cols,
-        photos: grid.photos,
-      );
-      messenger.showSnackBar(const SnackBar(content: Text('Saved. It will be sent when there is a connection.')));
-    } catch (error) {
-      messenger.showSnackBar(SnackBar(content: Text('The photographs could not be saved: $error')));
+      if (queued ?? false) {
+        messenger.showSnackBar(const SnackBar(content: Text('Saved. It will be sent when there is a connection.')));
+      }
     } finally {
-      await deleteGridFolder(folder);
-      if (mounted) setState(() => _working = false);
+      await _repository.deleteShotsFolder(folder);
     }
   }
+
+  Future<void> _queueGrid(FollowUpGridState grid) => _repository.queueAnnotationGrid(
+    package: widget.package,
+    annotation: widget.annotation,
+    rows: grid.rows,
+    cols: grid.cols,
+    photos: grid.photos,
+  );
 
   /// Can't wait in a queue: someone is at the wall deciding whether to retake it.
   Future<void> _decide(FollowUpUploadRecord upload, {required bool use}) async {
