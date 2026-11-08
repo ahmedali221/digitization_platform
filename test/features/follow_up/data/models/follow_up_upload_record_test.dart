@@ -122,6 +122,50 @@ void main() {
     expect(read.family, FollowUpUploadRecord.kindAnnotation);
   });
 
+  test('a new target survives being stored, with its description', () async {
+    Hive.registerAdapter(FollowUpUploadRecordAdapter(), override: true);
+    final box = await Hive.openBox<FollowUpUploadRecord>('new-target');
+
+    await box.put(
+      'a',
+      FollowUpUploadRecord(
+        token: 'a',
+        kind: FollowUpUploadRecord.kindNewTarget,
+        siteId: '1',
+        packageId: 1,
+        itemKey: 'W-12-A',
+        label: 'W-12-A',
+        filePath: 'a.jpg',
+        sha256: 'abc',
+        capturedAt: DateTime(2026),
+        createdAt: DateTime(2026),
+        physicalWidthM: 1.425,
+        widthSource: 'manual',
+        description: 'A procession of offering bearers.',
+      ),
+    );
+    await box.close();
+
+    final read = (await Hive.openBox<FollowUpUploadRecord>('new-target')).get('a')!;
+    expect(read.isNewTarget, isTrue);
+    expect(read.description, 'A procession of offering bearers.');
+    expect(read.family, FollowUpUploadRecord.kindNewTarget);
+    expect(read.replacedByNewerOne, isTrue);
+  });
+
+  test('a record from before new targets has no description', () async {
+    Hive.registerAdapter(_BeforeWidthsAdapter(), override: true);
+    final old = await Hive.openBox<FollowUpUploadRecord>('old-new-target');
+    await old.put('a', record());
+    await old.close();
+
+    Hive.registerAdapter(FollowUpUploadRecordAdapter(), override: true);
+    final read = (await Hive.openBox<FollowUpUploadRecord>('old-new-target')).get('a')!;
+
+    expect(read.description, isNull);
+    expect(read.isNewTarget, isFalse);
+  });
+
   test('a record from before grids has none of it', () async {
     Hive.registerAdapter(_BeforeWidthsAdapter(), override: true);
     final old = await Hive.openBox<FollowUpUploadRecord>('old-grid');

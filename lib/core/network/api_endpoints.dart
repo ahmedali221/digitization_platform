@@ -26,6 +26,7 @@ class ApiEndpoints {
   static String targetImage(String arKey) => '/studio-assets/$arKey/image';
   static String targetWidth(String arKey) =>
       '/studio-assets/$arKey/physical-width';
+  static String newTargets(String siteId) => '/sites/$siteId/new-targets';
   static const String followUpResults = '/follow-up/results';
   static String recaptureGrids(int annotationId) =>
       '/annotations/$annotationId/recapture-grids';

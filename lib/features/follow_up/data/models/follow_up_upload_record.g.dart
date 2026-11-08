@@ -45,13 +45,14 @@ class FollowUpUploadRecordAdapter extends TypeAdapter<FollowUpUploadRecord> {
       cols: fields[25] as int?,
       tilesJson: fields[26] as String?,
       failedCellsJson: fields[27] as String?,
+      description: fields[28] as String?,
     );
   }
 
   @override
   void write(BinaryWriter writer, FollowUpUploadRecord obj) {
     writer
-      ..writeByte(28)
+      ..writeByte(29)
       ..writeByte(0)
       ..write(obj.token)
       ..writeByte(1)
@@ -107,7 +108,9 @@ class FollowUpUploadRecordAdapter extends TypeAdapter<FollowUpUploadRecord> {
       ..writeByte(26)
       ..write(obj.tilesJson)
       ..writeByte(27)
-      ..write(obj.failedCellsJson);
+      ..write(obj.failedCellsJson)
+      ..writeByte(28)
+      ..write(obj.description);
   }
 
   @override

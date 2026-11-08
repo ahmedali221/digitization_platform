@@ -10,16 +10,18 @@ import 'package:uuid/uuid.dart';
 import '../../../../core/errors/failure.dart';
 import '../../../../core/storage/directory_manager.dart';
 import '../../domain/entities/follow_up_package.dart';
+import '../../domain/entities/new_target_details.dart';
 import '../../domain/entities/target_match_result.dart';
 import '../../domain/entities/target_width.dart';
 import '../../domain/repositories/follow_up_repository.dart';
+import '../../domain/repositories/new_target_repository.dart';
 import '../../domain/services/follow_up_upload_runner.dart';
 import '../../domain/services/shot_processing.dart';
 import '../datasources/follow_up_local_data_source.dart';
 import '../datasources/follow_up_remote_data_source.dart';
 import '../models/follow_up_upload_record.dart';
 
-class FollowUpRepositoryImpl implements FollowUpRepository {
+class FollowUpRepositoryImpl implements FollowUpRepository, NewTargetRepository {
   FollowUpRepositoryImpl({
     required FollowUpLocalDataSource local,
     required FollowUpRemoteDataSource remote,
@@ -363,6 +365,50 @@ class FollowUpRepositoryImpl implements FollowUpRepository {
     unawaited(_runner.drainAll());
   }
 
+  @override
+  Future<void> queueNewTarget({
+    required FollowUpPackage package,
+    required NewTargetDetails details,
+    required String photoPath,
+    required TargetWidth width,
+  }) => _queue(
+    kind: FollowUpUploadRecord.kindNewTarget,
+    siteId: package.siteId,
+    packageId: package.id,
+    itemKey: details.trimmedCode,
+    label: details.trimmedCode,
+    photoPath: photoPath,
+    width: width,
+    description: details.trimmedDescription,
+  );
+
+  @override
+  List<FollowUpUploadRecord> newTargets(String siteId) =>
+      uploads(siteId).where((upload) => upload.isNewTarget).toList();
+
+  @override
+  String? codeConflict(FollowUpPackage package, String code) {
+    final wanted = NewTargetDetails.normalized(code);
+    if (wanted.isEmpty) return null;
+
+    final inPackage = package.targets.any(
+      (target) => [target.wallLabel, target.label]
+          .any((name) => name != null && NewTargetDetails.normalized(name) == wanted),
+    );
+    if (inPackage) return 'A target of this site is already called ${code.trim()}.';
+
+    final holding = newTargets(package.siteId).any(
+      (upload) => _holdsItsCode(upload) && NewTargetDetails.normalized(upload.itemKey) == wanted,
+    );
+    if (holding) return 'You have already added a new target called ${code.trim()}.';
+    return null;
+  }
+
+  /// One that wasn't sent, or that the dashboard rejected, leaves its code free:
+  /// adding it again under that code is how it's taken again.
+  bool _holdsItsCode(FollowUpUploadRecord upload) =>
+      upload.status != FollowUpUploadRecord.statusFailed && upload.serverStatus != 'rejected';
+
   /// Millimetres are more than either way of measuring can tell apart, and it's
   /// what every later step stores.
   double _rounded(double meters) => (meters * 1000).round() / 1000;
@@ -378,6 +424,7 @@ class FollowUpRepositoryImpl implements FollowUpRepository {
     bool warningConfirmed = false,
     String? suggestedCornersJson,
     TargetWidth? width,
+    String? description,
   }) async {
     final token = _uuid.v4();
     final captures = await _directories.followUpDir(siteId, _capturesFolder);
@@ -411,6 +458,7 @@ class FollowUpRepositoryImpl implements FollowUpRepository {
           physicalWidthM: width == null ? null : _rounded(width.meters),
           widthSource: width?.source,
           previewPath: preview,
+          description: description,
         ),
       );
     } catch (_) {

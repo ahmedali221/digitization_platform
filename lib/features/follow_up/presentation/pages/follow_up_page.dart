@@ -16,8 +16,10 @@ import '../../domain/entities/target_width.dart';
 import '../../domain/repositories/follow_up_repository.dart';
 import '../cubit/follow_up_cubit.dart';
 import '../cubit/follow_up_state.dart';
+import '../widgets/new_targets_section.dart';
 import '../widgets/upload_status_chip.dart';
 import 'annotation_task_page.dart';
+import 'new_target_page.dart';
 import 'target_detail_page.dart';
 
 /// A site's follow-up work: the annotations to photograph again and the AR
@@ -240,13 +242,31 @@ class _TargetList extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    if (package.targets.isEmpty) {
-      return const EmptyState(icon: Icons.image_not_supported_outlined, message: 'This site has no AR targets.');
-    }
     final repository = GetIt.instance<FollowUpRepository>();
     final cubit = context.read<FollowUpCubit>();
 
     final uploads = cubit.state.uploads;
+    final newTargets = NewTargetsSection(
+      newTargets: uploads.where((upload) => upload.isNewTarget).toList(),
+      photoPathOf: repository.photoPath,
+      onAdd: () => _open(context, NewTargetPage(package: package)),
+    );
+
+    if (package.targets.isEmpty) {
+      return CustomScrollView(
+        slivers: [
+          newTargets,
+          const SliverFillRemaining(
+            hasScrollBody: false,
+            child: EmptyState(
+              icon: Icons.image_not_supported_outlined,
+              message: 'This site has no AR targets in this package yet.',
+            ),
+          ),
+        ],
+      );
+    }
+
     final done = package.targets.where((target) => targetIsDone(package, target, uploads)).toList();
     final toDo = package.targets.where((target) => !done.contains(target)).toList();
 
@@ -268,6 +288,7 @@ class _TargetList extends StatelessWidget {
 
       return CustomScrollView(
       slivers: [
+        if (!showingDone) newTargets,
         if (shown.isEmpty)
           SliverFillRemaining(
             hasScrollBody: false,
@@ -540,6 +561,7 @@ class _UploadRow extends StatelessWidget {
                   FollowUpUploadRecord.kindTarget => Icons.center_focus_strong,
                   FollowUpUploadRecord.kindWidth => Icons.straighten,
                   FollowUpUploadRecord.kindAnnotationGrid => Icons.grid_on,
+                  FollowUpUploadRecord.kindNewTarget => Icons.add_photo_alternate_outlined,
                   _ => Icons.text_snippet_outlined,
                 },
                 size: 18,

@@ -77,6 +77,7 @@ class FollowUpUploadRecord extends HiveObject {
     this.cols,
     this.tilesJson,
     this.failedCellsJson,
+    this.description,
   });
 
   static const String kindAnnotation = 'annotation';
@@ -89,6 +90,11 @@ class FollowUpUploadRecord extends HiveObject {
   /// record for the whole grid: [filePath] and [sha256] are empty, see [tiles].
   static const String kindAnnotationGrid = 'annotation_grid';
 
+  /// A target the site had no profile for, photographed to become one in the
+  /// studio. [itemKey] and [label] are the code the operator typed, which no
+  /// other target of the landmark may share, and [description] says what it is.
+  static const String kindNewTarget = 'new_target';
+
   static const String statusQueued = 'queued';
   static const String statusUploading = 'uploading';
   static const String statusSent = 'sent';
@@ -97,7 +103,8 @@ class FollowUpUploadRecord extends HiveObject {
   @HiveField(0)
   final String token;
 
-  /// [kindAnnotation], [kindAnnotationGrid], [kindTarget] or [kindWidth].
+  /// [kindAnnotation], [kindAnnotationGrid], [kindTarget], [kindWidth] or
+  /// [kindNewTarget].
   @HiveField(1)
   final String kind;
 
@@ -107,7 +114,8 @@ class FollowUpUploadRecord extends HiveObject {
   @HiveField(3)
   final int packageId;
 
-  /// The annotation id, or the target's AR key for the other two kinds.
+  /// The annotation id, the target's AR key for a target or width, or the
+  /// typed code of a new target.
   @HiveField(4)
   final String itemKey;
 
@@ -188,6 +196,12 @@ class FollowUpUploadRecord extends HiveObject {
   /// The cells the dashboard couldn't join: see [failedCells].
   @HiveField(27)
   String? failedCellsJson;
+
+  /// What a new target shows, for the studio's profile. Null on everything else.
+  @HiveField(28)
+  final String? description;
+
+  bool get isNewTarget => kind == kindNewTarget;
 
   /// A newer upload of the same thing makes an unsent one pointless, except for
   /// target photographs, where the reviewer chooses between all of them.

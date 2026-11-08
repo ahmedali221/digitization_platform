@@ -8,6 +8,7 @@ import '../../features/follow_up/data/datasources/follow_up_local_data_source.da
 import '../../features/follow_up/data/datasources/follow_up_remote_data_source.dart';
 import '../../features/follow_up/data/repositories/follow_up_repository_impl.dart';
 import '../../features/follow_up/domain/repositories/follow_up_repository.dart';
+import '../../features/follow_up/domain/repositories/new_target_repository.dart';
 import '../../features/follow_up/domain/services/follow_up_upload_runner.dart';
 import '../../features/grid_capture/data/datasources/camera_preferences_local_data_source.dart';
 import '../../features/grid_capture/data/datasources/capture_session_local_data_source.dart';
@@ -220,13 +221,19 @@ void setupDependencies() {
       ),
     ),
   );
-  GetIt.instance.registerLazySingleton<FollowUpRepository>(
+  GetIt.instance.registerLazySingleton<FollowUpRepositoryImpl>(
     () => FollowUpRepositoryImpl(
       local: GetIt.instance<FollowUpLocalDataSource>(),
       remote: GetIt.instance<FollowUpRemoteDataSource>(),
       directoryManager: GetIt.instance<DirectoryManager>(),
       runner: GetIt.instance<FollowUpUploadRunner>(),
     ),
+  );
+  GetIt.instance.registerLazySingleton<FollowUpRepository>(
+    () => GetIt.instance<FollowUpRepositoryImpl>(),
+  );
+  GetIt.instance.registerLazySingleton<NewTargetRepository>(
+    () => GetIt.instance<FollowUpRepositoryImpl>(),
   );
 
   GetIt.instance.registerLazySingleton<SiteBackupService>(

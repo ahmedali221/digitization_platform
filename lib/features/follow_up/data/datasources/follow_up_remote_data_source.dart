@@ -99,6 +99,38 @@ class FollowUpRemoteDataSource {
     }
   }
 
+  /// Sends a target the site had no profile for, with its code, description and
+  /// width. The token makes a retry harmless, as for any other photograph.
+  Future<void> uploadNewTarget(
+    FollowUpUploadRecord record, {
+    required Stream<List<int>> Function() openBytes,
+    required int length,
+  }) async {
+    try {
+      await _dio.post(
+        ApiEndpoints.newTargets(record.siteId),
+        data: FormData.fromMap({
+          'client_token': record.token,
+          'sha256': record.sha256,
+          'package_id': record.packageId,
+          'captured_at': record.capturedAt.toUtc().toIso8601String(),
+          'wall_label': record.itemKey,
+          'description': record.description,
+          'physical_width_m': record.physicalWidthM,
+          'width_source': record.widthSource,
+          'capture': MultipartFile.fromStream(
+            openBytes,
+            length,
+            filename: '${record.token}.jpg',
+          ),
+        }),
+        options: Options(sendTimeout: const Duration(minutes: 5)),
+      );
+    } on DioException catch (e) {
+      throw AppException(mapDioException(e));
+    }
+  }
+
   /// Announces a grid before its photographs. A retry is answered from the first.
   Future<void> registerGrid(FollowUpUploadRecord record) async {
     try {

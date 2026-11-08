@@ -43,6 +43,19 @@ class _FakeRemote implements FollowUpRemoteDataSource {
     uploaded.add(record.token);
   }
 
+  final List<String> newTargetsUploaded = [];
+
+  @override
+  Future<void> uploadNewTarget(
+    FollowUpUploadRecord record, {
+    required Stream<List<int>> Function() openBytes,
+    required int length,
+  }) async {
+    final failure = failures[record.token];
+    if (failure != null) throw failure;
+    newTargetsUploaded.add(record.token);
+  }
+
   @override
   Future<void> uploadWidth(FollowUpUploadRecord record) async {
     final failure = failures[record.token];
@@ -181,6 +194,85 @@ void main() {
     local.records[token] = record;
     return record;
   }
+
+  FollowUpUploadRecord queuedNewTarget(String token) {
+    final path = p.join(folder.path, '$token.jpg');
+    File(path).writeAsStringSync('photo');
+    final record = FollowUpUploadRecord(
+      token: token,
+      kind: FollowUpUploadRecord.kindNewTarget,
+      siteId: '1',
+      packageId: 1,
+      itemKey: 'W-12-A',
+      label: 'W-12-A',
+      filePath: path,
+      sha256: 'abc',
+      capturedAt: DateTime(2026),
+      createdAt: DateTime(2026),
+      physicalWidthM: 1.425,
+      widthSource: 'ar',
+      description: 'A procession of offering bearers.',
+    );
+    local.records[token] = record;
+    return record;
+  }
+
+  group('new targets', () {
+    test('go to their own endpoint, not as a photograph of a target', () async {
+      final record = queuedNewTarget('n');
+
+      await runner.drainAll();
+
+      expect(remote.newTargetsUploaded, ['n']);
+      expect(remote.uploaded, isEmpty);
+      expect(record.status, FollowUpUploadRecord.statusSent);
+    });
+
+    test('a code refused by the dashboard says why and is not retried', () async {
+      final record = queuedNewTarget('n');
+      remote.failures['n'] = const AppException(
+        ValidationFailure('The code is already used.', {'wall_label': ['The code is already used.']}),
+      );
+
+      await runner.drainAll();
+      await runner.drainAll();
+
+      expect(record.status, FollowUpUploadRecord.statusFailed);
+      expect(record.attempts, 1);
+      expect(record.lastError, 'The code is already used.');
+    });
+
+    test('with no connection it waits for the next drain', () async {
+      final record = queuedNewTarget('n');
+      remote.failures['n'] = const AppException(NetworkFailure());
+
+      await runner.drainAll();
+
+      expect(record.status, FollowUpUploadRecord.statusQueued);
+    });
+
+    test('once the studio has made it, its photograph is let go and the preview kept', () async {
+      final record = queuedNewTarget('n')..status = FollowUpUploadRecord.statusSent;
+      final preview = p.join(folder.path, 'n_preview.jpg');
+      File(preview).writeAsStringSync('small');
+      record.previewPath = preview;
+
+      remote.answers = [
+        {'token': 'n', 'kind': 'new_target', 'status': 'pending_review'},
+      ];
+      await runner.refreshResults();
+      expect(File(record.filePath).existsSync(), isTrue);
+
+      remote.answers = [
+        {'token': 'n', 'kind': 'new_target', 'status': 'created', 'ar_key': 'abcdefghij'},
+      ];
+      await runner.refreshResults();
+
+      expect(record.serverStatus, 'created');
+      expect(File(record.filePath).existsSync(), isFalse);
+      expect(File(preview).existsSync(), isTrue);
+    });
+  });
 
   test('a width goes with no file to look for', () async {
     final record = queuedWidth('w');

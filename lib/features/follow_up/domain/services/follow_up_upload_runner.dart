@@ -9,8 +9,8 @@ import '../../data/datasources/follow_up_local_data_source.dart';
 import '../../data/datasources/follow_up_remote_data_source.dart';
 import '../../data/models/follow_up_upload_record.dart';
 
-/// Sends queued follow-up photographs, grids and target widths, and collects
-/// what became of them.
+/// Sends queued follow-up photographs, grids, target widths and new targets,
+/// and collects what became of them.
 ///
 /// Separate from SyncQueueRunner, which is built around walls: here each
 /// photograph is one upload, identified by its token, so a retry can never
@@ -49,6 +49,8 @@ class FollowUpUploadRunner {
     'studio_rejected',
     'stitch_failed',
     'declined',
+    // A new target the studio made a profile of: the next package lists it.
+    'created',
   };
 
   /// Where a grid has no stitched picture to show. Any other status means it was
@@ -126,6 +128,12 @@ class FollowUpUploadRunner {
         await _remote.uploadWidth(record);
       } else if (record.isGrid) {
         await _sendGrid(record);
+      } else if (record.isNewTarget) {
+        await _remote.uploadNewTarget(
+          record,
+          openBytes: file!.openRead,
+          length: await file.length(),
+        );
       } else {
         await _remote.upload(
           record,

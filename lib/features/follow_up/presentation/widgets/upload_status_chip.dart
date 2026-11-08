@@ -43,6 +43,7 @@ class UploadStatus {
         _ => const UploadStatus('Width saved', AppColors.successContainer, AppColors.onSuccessContainer),
       };
     }
+    if (upload.isNewTarget) return UploadStatus._ofNewTarget(upload.serverStatus);
     return switch (upload.serverStatus) {
       'receiving' || 'stitching' => const UploadStatus(
         'Stitching on the dashboard',
@@ -124,6 +125,33 @@ class UploadStatus {
       _ => const UploadStatus('Sent, checking', AppColors.hoverSurface, AppColors.textSecondaryIcon),
     };
   }
+
+  /// A target the site had no profile for: reviewed on the dashboard, then made
+  /// a profile by the studio, after which the next package lists it.
+  factory UploadStatus._ofNewTarget(String? serverStatus) => switch (serverStatus) {
+    'pending_review' => const UploadStatus(
+      'Waiting for review',
+      AppColors.warningContainer,
+      AppColors.onWarningContainer,
+    ),
+    'approved' || 'push_failed' => const UploadStatus(
+      'Approved, the studio is making it',
+      AppColors.warningContainer,
+      AppColors.onWarningContainer,
+    ),
+    'created' => const UploadStatus(
+      'Created in the studio',
+      AppColors.successContainer,
+      AppColors.onSuccessContainer,
+    ),
+    'rejected' => const UploadStatus(
+      'Rejected: add it again',
+      AppColors.dangerContainer,
+      AppColors.onDangerContainer,
+      needsRetake: true,
+    ),
+    _ => const UploadStatus('Sent, checking', AppColors.hoverSurface, AppColors.textSecondaryIcon),
+  };
 
   final String label;
   final Color background;
