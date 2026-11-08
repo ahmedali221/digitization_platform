@@ -10,7 +10,6 @@ import 'package:flutter/material.dart';
 abstract final class GridCaptureMetrics {
   static const double horizontalPadding = 20;
   static const double gap = 10;
-  static const double shutterBottomPadding = 28;
 
   /// "Has photos" cell tint — lighter than the captured-status blue used for
   /// the selected-cell background, no equivalent shared token.

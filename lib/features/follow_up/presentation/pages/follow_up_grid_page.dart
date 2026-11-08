@@ -7,6 +7,7 @@ import 'package:get_it/get_it.dart';
 import 'package:path/path.dart' as p;
 
 import '../../../../core/camera/camera_widgets.dart';
+import '../../../../core/camera/capture_camera_layout.dart';
 import '../../../../core/camera/capture_camera_session.dart';
 import '../../../../core/domain/entities/wall.dart';
 import '../../../../core/theme/app_colors.dart';
@@ -354,95 +355,56 @@ class _GridCameraPageState extends State<_GridCameraPage> {
     return Scaffold(
       backgroundColor: AppColors.cameraBackground,
       body: SafeArea(
-        child: Column(
-          children: [
-            Expanded(
-              child: Stack(
-                alignment: Alignment.center,
-                children: [
-                  CameraViewfinder(
-                    loadState: _camera.loadState,
-                    errorMessage: _camera.errorMessage,
-                    controller: _camera.controller,
-                    onScaleStart: _camera.onScaleStart,
-                    onScaleUpdate: _camera.onScaleUpdate,
-                  ),
-                  Positioned(
-                    top: AppSpacing.lg,
-                    left: AppSpacing.lg,
-                    child: CameraRoundButton(
-                      icon: Icons.arrow_back,
-                      iconColor: Colors.white,
-                      onTap: () => Navigator.of(context).pop(),
-                    ),
-                  ),
-                  Positioned(
-                    top: AppSpacing.lg,
-                    child: CameraPill(label: '${widget.title} · ${_cellName(state.activeCell, state.cols)}'),
-                  ),
-                  Positioned(
-                    top: AppSpacing.lg,
-                    right: AppSpacing.lg,
-                    child: CameraFlashButton(mode: _camera.flashMode, onTap: _camera.cycleFlash),
-                  ),
-                  if (_camera.loadState == CameraLoadState.ready)
-                    Positioned(
-                      bottom: AppSpacing.md,
-                      child: CameraZoomPresets(
-                        currentZoom: _camera.displayZoom,
-                        minimumZoom: _camera.primaryMinimumZoom,
-                        maximumZoom: _camera.primaryMaximumZoom,
-                        hasUltraWideLens: _camera.canReachUltraWide,
-                        onSelect: _camera.selectZoomPreset,
-                      ),
-                    ),
-                ],
-              ),
+        child: CaptureCameraLayout(
+          viewfinder: CameraViewfinder(
+            loadState: _camera.loadState,
+            errorMessage: _camera.errorMessage,
+            controller: _camera.controller,
+            onScaleStart: _camera.onScaleStart,
+            onScaleUpdate: _camera.onScaleUpdate,
+          ),
+          topStart: CameraRoundButton(
+            icon: Icons.arrow_back,
+            iconColor: Colors.white,
+            onTap: () => Navigator.of(context).pop(),
+          ),
+          topCenter: CameraPill(label: '${widget.title} · ${_cellName(state.activeCell, state.cols)}'),
+          topEnd: CameraFlashButton(mode: _camera.flashMode, onTap: _camera.cycleFlash),
+          zoom: _camera.loadState == CameraLoadState.ready
+              ? CameraZoomPresets(
+                  currentZoom: _camera.displayZoom,
+                  minimumZoom: _camera.primaryMinimumZoom,
+                  maximumZoom: _camera.primaryMaximumZoom,
+                  hasUltraWideLens: _camera.canReachUltraWide,
+                  onSelect: _camera.selectZoomPreset,
+                )
+              : null,
+          gridMap: CameraGridNavigator(
+            grid: GridState(
+              rows: state.rows,
+              cols: state.cols,
+              cells: [
+                for (var cell = 0; cell < state.cellCount; cell++)
+                  GridCell(shotPaths: [if (state.photos[cell] != null) state.photos[cell]!]),
+              ],
             ),
-            CameraGridNavigator(
-              grid: GridState(
-                rows: state.rows,
-                cols: state.cols,
-                cells: [
-                  for (var cell = 0; cell < state.cellCount; cell++)
-                    GridCell(shotPaths: [if (state.photos[cell] != null) state.photos[cell]!]),
-                ],
-              ),
-              activeCellIndex: state.activeCell,
-              onCellSelected: cubit.select,
-              cellQuality: state.quality,
-              enabled: !_camera.capturing,
-            ),
-            Padding(
-              padding: const EdgeInsets.all(AppSpacing.lg),
-              child: Row(
-                children: [
-                  Expanded(
-                    child: Align(
-                      alignment: Alignment.centerLeft,
-                      child: reviewableCell == null
-                          ? null
-                          : CapturedPhotoThumbnail(
-                              path: state.photos[reviewableCell]!,
-                              label: _cellName(reviewableCell, state.cols),
-                              onTap: _camera.capturing ? null : () => _reviewCell(state, reviewableCell),
-                            ),
-                    ),
-                  ),
-                  CameraShutterButton(onTap: _camera.canShoot ? _shoot : null),
-                  Expanded(
-                    child: Align(
-                      alignment: Alignment.centerRight,
-                      child: FilledButton(
-                        onPressed: state.photos.isEmpty || _camera.capturing ? null : () => Navigator.of(context).pop(),
-                        child: Text('Review (${state.photos.length}/${state.cellCount})'),
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ],
+            activeCellIndex: state.activeCell,
+            onCellSelected: cubit.select,
+            cellQuality: state.quality,
+            enabled: !_camera.capturing,
+          ),
+          shots: reviewableCell == null
+              ? null
+              : (_) => CapturedPhotoThumbnail(
+                  path: state.photos[reviewableCell]!,
+                  label: _cellName(reviewableCell, state.cols),
+                  onTap: _camera.capturing ? null : () => _reviewCell(state, reviewableCell),
+                ),
+          shutter: CameraShutterButton(onTap: _camera.canShoot ? _shoot : null),
+          finish: FilledButton(
+            onPressed: state.photos.isEmpty || _camera.capturing ? null : () => Navigator.of(context).pop(),
+            child: Text('Review (${state.photos.length}/${state.cellCount})'),
+          ),
         ),
       ),
     );

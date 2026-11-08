@@ -3,6 +3,7 @@ package com.example.digitization_platform
 import android.content.ContentValues
 import android.content.Context
 import android.content.Intent
+import android.content.pm.ActivityInfo
 import android.hardware.camera2.CameraCharacteristics
 import android.hardware.camera2.CameraManager
 import android.media.MediaScannerConnection
@@ -46,6 +47,7 @@ class MainActivity : FlutterActivity() {
     private val publicDownloadsChannelName = "nilelens/public_downloads"
     private val lensInfoChannelName = "nilelens/lens_info"
     private val arMeasureChannelName = "nilelens/ar_measure"
+    private val screenOrientationChannelName = "nilelens/screen_orientation"
     private val downloadsSubfolder = "NileLens"
 
     private val arMeasureRequestCode = 0x4152
@@ -125,6 +127,25 @@ class MainActivity : FlutterActivity() {
                             arMeasureRequestCode,
                         )
                     }
+                }
+                else -> result.notImplemented()
+            }
+        }
+
+        // A capture screen turns with the phone even when auto-rotate is off: operators
+        // turn it sideways for wide walls, and a locked phone would leave them shooting
+        // landscape through a portrait screen.
+        val screenOrientationChannel =
+            MethodChannel(flutterEngine.dartExecutor.binaryMessenger, screenOrientationChannelName)
+        screenOrientationChannel.setMethodCallHandler { call, result ->
+            when (call.method) {
+                "followSensor" -> {
+                    requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_SENSOR
+                    result.success(null)
+                }
+                "release" -> {
+                    requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
+                    result.success(null)
                 }
                 else -> result.notImplemented()
             }

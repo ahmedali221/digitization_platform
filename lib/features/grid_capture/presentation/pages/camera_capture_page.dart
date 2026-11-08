@@ -7,6 +7,7 @@ import 'package:get_it/get_it.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../../../core/camera/camera_widgets.dart';
+import '../../../../core/camera/capture_camera_layout.dart';
 import '../../../../core/camera/capture_camera_session.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../../../core/theme/app_spacing.dart';
@@ -240,95 +241,67 @@ class _CameraBodyState extends State<_CameraBody> {
     final cellLabel = 'R${row}C$col';
     final shotPaths = grid.cells[activeCellId].shotPaths;
 
-    return Column(
-      children: [
-        Expanded(
-          child: Stack(
-            alignment: Alignment.center,
-            children: [
-              CameraViewfinder(
-                loadState: _camera.loadState,
-                errorMessage: _camera.errorMessage,
-                controller: _camera.controller,
-                onScaleStart: _camera.onScaleStart,
-                onScaleUpdate: _camera.onScaleUpdate,
-              ),
-              Positioned(
-                top: AppSpacing.lg,
-                left: AppSpacing.lg,
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    CameraPill(label: cellLabel),
-                    const SizedBox(height: AppSpacing.xs),
-                    QualityBadge(
-                      result: widget.state.cellQuality[activeCellId],
-                      analyzing: widget.state.analyzingCellIds.contains(activeCellId),
-                      onToggleOverride: () => context
-                          .read<CaptureSessionCubit>()
-                          .toggleQualityOverride(activeCellId),
-                    ),
-                  ],
-                ),
-              ),
-              Positioned(
-                top: AppSpacing.lg,
-                right: AppSpacing.lg,
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.end,
-                  children: [
-                    _SaveButton(onTap: _camera.capturing ? null : _handleSave),
-                    const SizedBox(height: AppSpacing.sm),
-                    CameraFlashButton(mode: _camera.flashMode, onTap: _camera.cycleFlash),
-                    const SizedBox(height: AppSpacing.sm),
-                    _AutoAdvanceToggleButton(
-                      enabled: _autoAdvance,
-                      onTap: _toggleAutoAdvance,
-                    ),
-                  ],
-                ),
-              ),
-              Positioned(
-                top: AppSpacing.lg,
-                left: 0,
-                right: 0,
-                child: Center(
-                  child: CameraRoundButton(
-                    icon: Icons.arrow_back,
-                    iconColor: Colors.white,
-                    onTap: () => context.safePop(),
-                  ),
-                ),
-              ),
-              if (_camera.loadState == CameraLoadState.ready) // TODO: restore `&& _maximumZoom > _minimumZoom` guard once done testing on emulator
-                Positioned(
-                  bottom: AppSpacing.md,
-                  child: CameraZoomPresets(
-                    currentZoom: _camera.displayZoom,
-                    minimumZoom: _camera.primaryMinimumZoom,
-                    maximumZoom: _camera.primaryMaximumZoom,
-                    hasUltraWideLens: _camera.canReachUltraWide,
-                    onSelect: _camera.selectZoomPreset,
-                  ),
-                ),
-            ],
+    return CaptureCameraLayout(
+      viewfinder: CameraViewfinder(
+        loadState: _camera.loadState,
+        errorMessage: _camera.errorMessage,
+        controller: _camera.controller,
+        onScaleStart: _camera.onScaleStart,
+        onScaleUpdate: _camera.onScaleUpdate,
+      ),
+      topStart: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          CameraPill(label: cellLabel),
+          const SizedBox(height: AppSpacing.xs),
+          QualityBadge(
+            result: widget.state.cellQuality[activeCellId],
+            analyzing: widget.state.analyzingCellIds.contains(activeCellId),
+            onToggleOverride: () => context.read<CaptureSessionCubit>().toggleQualityOverride(activeCellId),
           ),
-        ),
-        CameraGridNavigator(
-          grid: grid,
-          activeCellIndex: activeCellId,
-          cellQuality: widget.state.cellQuality,
-          enabled: !_camera.capturing,
-          onCellSelected: context.read<CaptureSessionCubit>().openCell,
-        ),
-        _CaptureFooter(
-          shotPaths: shotPaths,
-          quality: widget.state.cellQuality[activeCellId],
-          deletingPaths: _deletingPaths,
-          onDelete: (path) => _handleDeletePhoto(activeCellId, path),
-          onShutter: _camera.canShoot ? _handleShutter : null,
-        ),
-      ],
+        ],
+      ),
+      topCenter: CameraRoundButton(
+        icon: Icons.arrow_back,
+        iconColor: Colors.white,
+        onTap: () => context.safePop(),
+      ),
+      topEnd: Column(
+        crossAxisAlignment: CrossAxisAlignment.end,
+        children: [
+          _SaveButton(onTap: _camera.capturing ? null : _handleSave),
+          const SizedBox(height: AppSpacing.sm),
+          CameraFlashButton(mode: _camera.flashMode, onTap: _camera.cycleFlash),
+          const SizedBox(height: AppSpacing.sm),
+          _AutoAdvanceToggleButton(enabled: _autoAdvance, onTap: _toggleAutoAdvance),
+        ],
+      ),
+      zoom: _camera.loadState == CameraLoadState.ready
+          ? CameraZoomPresets(
+              currentZoom: _camera.displayZoom,
+              minimumZoom: _camera.primaryMinimumZoom,
+              maximumZoom: _camera.primaryMaximumZoom,
+              hasUltraWideLens: _camera.canReachUltraWide,
+              onSelect: _camera.selectZoomPreset,
+            )
+          : null,
+      gridMap: CameraGridNavigator(
+        grid: grid,
+        activeCellIndex: activeCellId,
+        cellQuality: widget.state.cellQuality,
+        enabled: !_camera.capturing,
+        onCellSelected: context.read<CaptureSessionCubit>().openCell,
+      ),
+      shots: shotPaths.isEmpty
+          ? null
+          : (axis) => _ThumbnailStrip(
+              axis: axis,
+              shotPaths: shotPaths,
+              quality: widget.state.cellQuality[activeCellId],
+              deletingPaths: _deletingPaths,
+              onDelete: (path) => _handleDeletePhoto(activeCellId, path),
+            ),
+      shutter: CameraShutterButton(onTap: _camera.canShoot ? _handleShutter : null),
     );
   }
 }
@@ -422,14 +395,18 @@ class _SaveButton extends StatelessWidget {
   }
 }
 
+/// The active cell's shots, running across under the viewfinder or down the
+/// rail beside it.
 class _ThumbnailStrip extends StatelessWidget {
   const _ThumbnailStrip({
+    required this.axis,
     required this.shotPaths,
     required this.quality,
     required this.deletingPaths,
     required this.onDelete,
   });
 
+  final Axis axis;
   final List<String> shotPaths;
 
   /// This cell's quality result, if scored — carries every shot's own score
@@ -440,84 +417,25 @@ class _ThumbnailStrip extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    if (shotPaths.isEmpty) return const SizedBox.shrink();
-    return SizedBox(
-      height: 64,
-      child: ListView.separated(
-        scrollDirection: Axis.horizontal,
-        itemCount: shotPaths.length,
-        separatorBuilder: (_, _) => const SizedBox(width: AppSpacing.sm),
-        itemBuilder: (context, index) {
-          final path = shotPaths[index];
-          return _ThumbnailTile(
+    final list = ListView.separated(
+      scrollDirection: axis,
+      shrinkWrap: axis == Axis.vertical,
+      itemCount: shotPaths.length,
+      separatorBuilder: (_, _) => const SizedBox.square(dimension: AppSpacing.sm),
+      itemBuilder: (context, index) {
+        final path = shotPaths[index];
+        return Center(
+          child: _ThumbnailTile(
             path: path,
             score: quality?.scoreFor(path),
             isMain: quality?.imagePath == path,
             deleting: deletingPaths.contains(path),
             onDelete: () => onDelete(path),
-          );
-        },
-      ),
+          ),
+        );
+      },
     );
-  }
-}
-
-/// Keeps the shutter and captured-image strip in one row so they no longer
-/// consume two full rows below the camera. The reclaimed height belongs to the
-/// live viewfinder, while the thumbnails are slightly larger than before.
-class _CaptureFooter extends StatelessWidget {
-  const _CaptureFooter({
-    required this.shotPaths,
-    required this.quality,
-    required this.deletingPaths,
-    required this.onDelete,
-    required this.onShutter,
-  });
-
-  final List<String> shotPaths;
-  final CellQualityResult? quality;
-  final Set<String> deletingPaths;
-  final ValueChanged<String> onDelete;
-  final VoidCallback? onShutter;
-
-  @override
-  Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(
-        AppSpacing.lg,
-        AppSpacing.md,
-        AppSpacing.lg,
-        GridCaptureMetrics.shutterBottomPadding,
-      ),
-      child: LayoutBuilder(
-        builder: (context, constraints) {
-          const shutterSize = 72.0;
-          const sideGap = AppSpacing.md;
-          final sideWidth =
-              ((constraints.maxWidth - shutterSize - (sideGap * 2)) / 2)
-                  .clamp(0.0, double.infinity)
-                  .toDouble();
-
-          return Row(
-            children: [
-              SizedBox(
-                width: sideWidth,
-                child: _ThumbnailStrip(
-                  shotPaths: shotPaths,
-                  quality: quality,
-                  deletingPaths: deletingPaths,
-                  onDelete: onDelete,
-                ),
-              ),
-              const SizedBox(width: sideGap),
-              CameraShutterButton(onTap: onShutter),
-              const SizedBox(width: sideGap),
-              SizedBox(width: sideWidth),
-            ],
-          );
-        },
-      ),
-    );
+    return axis == Axis.horizontal ? SizedBox(height: _ThumbnailTile.size, child: list) : list;
   }
 }
 
@@ -544,11 +462,13 @@ class _ThumbnailTile extends StatelessWidget {
   final bool deleting;
   final VoidCallback onDelete;
 
+  static const double size = 64;
+
   @override
   Widget build(BuildContext context) {
     return Container(
-      width: 64,
-      height: 64,
+      width: size,
+      height: size,
       clipBehavior: Clip.antiAlias,
       decoration: BoxDecoration(
         color: GridCaptureMetrics.cameraThumbBackground,
@@ -569,7 +489,7 @@ class _ThumbnailTile extends StatelessWidget {
                 // spike that makes the capture screen stutter right after
                 // every shutter press (see grid_cell_tile.dart for the same
                 // fix applied to the grid overview).
-                cacheWidth: (64 * MediaQuery.devicePixelRatioOf(context)).round(),
+                cacheWidth: (size * MediaQuery.devicePixelRatioOf(context)).round(),
                 errorBuilder: (context, error, stackTrace) => const Center(
                   child: Icon(
                     Icons.image,

@@ -7,6 +7,7 @@ import 'package:get_it/get_it.dart';
 import 'package:path/path.dart' as p;
 
 import '../../../../core/camera/camera_widgets.dart';
+import '../../../../core/camera/capture_camera_layout.dart';
 import '../../../../core/camera/capture_camera_session.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../../../core/theme/app_spacing.dart';
@@ -92,95 +93,75 @@ class _FollowUpCameraPageState extends State<FollowUpCameraPage> {
     return Scaffold(
       backgroundColor: AppColors.cameraBackground,
       body: SafeArea(
-        child: Column(
-          children: [
-            Expanded(
-              child: Stack(
-                alignment: Alignment.center,
-                children: [
-                  CameraViewfinder(
-                    loadState: _camera.loadState,
-                    errorMessage: _camera.errorMessage,
-                    controller: _camera.controller,
-                    onScaleStart: _camera.onScaleStart,
-                    onScaleUpdate: _camera.onScaleUpdate,
-                  ),
-                  Positioned(
-                    top: AppSpacing.lg,
-                    left: AppSpacing.lg,
-                    child: CameraRoundButton(
-                      icon: Icons.arrow_back,
-                      iconColor: Colors.white,
-                      onTap: () => Navigator.of(context).pop(),
-                    ),
-                  ),
-                  Positioned(
-                    top: AppSpacing.lg,
-                    child: CameraPill(label: widget.title),
-                  ),
-                  Positioned(
-                    top: AppSpacing.lg,
-                    right: AppSpacing.lg,
-                    child: CameraFlashButton(mode: _camera.flashMode, onTap: _camera.cycleFlash),
-                  ),
-                  if (_camera.loadState == CameraLoadState.ready)
-                    Positioned(
-                      bottom: AppSpacing.md,
-                      child: CameraZoomPresets(
-                        currentZoom: _camera.displayZoom,
-                        minimumZoom: _camera.primaryMinimumZoom,
-                        maximumZoom: _camera.primaryMaximumZoom,
-                        hasUltraWideLens: _camera.canReachUltraWide,
-                        onSelect: _camera.selectZoomPreset,
-                      ),
-                    ),
-                ],
-              ),
-            ),
-            Padding(
-              padding: const EdgeInsets.all(AppSpacing.lg),
-              child: Row(
-                children: [
-                  Expanded(
-                    child: SizedBox(
-                      height: CapturedPhotoThumbnail.size,
-                      child: ListView.separated(
-                        scrollDirection: Axis.horizontal,
-                        itemCount: _shots.length,
-                        separatorBuilder: (_, _) => const SizedBox(width: AppSpacing.sm),
-                        // Newest first: this strip only fits a couple, and the
-                        // one just taken is the one to check.
-                        itemBuilder: (context, index) {
-                          final path = _shots[_shots.length - 1 - index];
-                          return CapturedPhotoThumbnail(
-                            key: ValueKey(path),
-                            path: path,
-                            onTap: _camera.capturing ? null : () => _review(path),
-                          );
-                        },
-                      ),
-                    ),
-                  ),
-                  const SizedBox(width: AppSpacing.md),
-                  CameraShutterButton(onTap: _camera.canShoot ? _shoot : null),
-                  const SizedBox(width: AppSpacing.md),
-                  Expanded(
-                    child: Align(
-                      alignment: Alignment.centerRight,
-                      child: FilledButton(
-                        onPressed: _shots.isEmpty || _camera.capturing
-                            ? null
-                            : () => Navigator.of(context).pop(List<String>.of(_shots)),
-                        child: Text('Done (${_shots.length})'),
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ],
+        child: CaptureCameraLayout(
+          viewfinder: CameraViewfinder(
+            loadState: _camera.loadState,
+            errorMessage: _camera.errorMessage,
+            controller: _camera.controller,
+            onScaleStart: _camera.onScaleStart,
+            onScaleUpdate: _camera.onScaleUpdate,
+          ),
+          topStart: CameraRoundButton(
+            icon: Icons.arrow_back,
+            iconColor: Colors.white,
+            onTap: () => Navigator.of(context).pop(),
+          ),
+          topCenter: CameraPill(label: widget.title),
+          topEnd: CameraFlashButton(mode: _camera.flashMode, onTap: _camera.cycleFlash),
+          zoom: _camera.loadState == CameraLoadState.ready
+              ? CameraZoomPresets(
+                  currentZoom: _camera.displayZoom,
+                  minimumZoom: _camera.primaryMinimumZoom,
+                  maximumZoom: _camera.primaryMaximumZoom,
+                  hasUltraWideLens: _camera.canReachUltraWide,
+                  onSelect: _camera.selectZoomPreset,
+                )
+              : null,
+          shots: (axis) => _ShotStrip(
+            axis: axis,
+            shots: _shots,
+            onOpen: _camera.capturing ? null : _review,
+          ),
+          shutter: CameraShutterButton(onTap: _camera.canShoot ? _shoot : null),
+          finish: FilledButton(
+            onPressed: _shots.isEmpty || _camera.capturing
+                ? null
+                : () => Navigator.of(context).pop(List<String>.of(_shots)),
+            child: Text('Done (${_shots.length})'),
+          ),
         ),
       ),
     );
+  }
+}
+
+/// The shots taken so far, newest first: the strip only fits a couple, and the
+/// one just taken is the one to check.
+class _ShotStrip extends StatelessWidget {
+  const _ShotStrip({required this.axis, required this.shots, required this.onOpen});
+
+  final Axis axis;
+  final List<String> shots;
+  final ValueChanged<String>? onOpen;
+
+  @override
+  Widget build(BuildContext context) {
+    final list = ListView.separated(
+      scrollDirection: axis,
+      shrinkWrap: axis == Axis.vertical,
+      itemCount: shots.length,
+      separatorBuilder: (_, _) => const SizedBox.square(dimension: AppSpacing.sm),
+      itemBuilder: (context, index) {
+        final path = shots[shots.length - 1 - index];
+        return Center(
+          child: CapturedPhotoThumbnail(
+            key: ValueKey(path),
+            path: path,
+            onTap: onOpen == null ? null : () => onOpen!(path),
+          ),
+        );
+      },
+    );
+    return axis == Axis.horizontal ? SizedBox(height: CapturedPhotoThumbnail.size, child: list) : list;
   }
 }
