@@ -7,6 +7,7 @@ import '../../../../core/domain/entities/building.dart';
 import '../../../../core/domain/repositories/site_repository.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../../../core/theme/app_spacing.dart';
+import '../../../../core/theme/object_type_meta.dart';
 import '../../../../core/theme/wall_status.dart';
 import '../../../../core/utils/canvas_layout.dart';
 import '../../../../core/utils/navigation_extensions.dart';
@@ -80,10 +81,7 @@ class BuildingsListPage extends StatelessWidget {
                             ],
                           ),
                         ),
-                        SiteBackupButton(
-                          siteId: siteId,
-                          siteName: site.name,
-                        ),
+                        SiteBackupButton(siteId: siteId, siteName: site.name),
                         const SizedBox(width: AppSpacing.xs),
                         CircleIconButton(
                           icon: Icons.refresh,
@@ -103,7 +101,9 @@ class BuildingsListPage extends StatelessWidget {
                       OverviewMetrics.subtitleBottomGap,
                     ),
                     child: Text(
-                      '${site.buildings.length} buildings · ${site.wallsCaptured}/${site.wallsTotal} walls captured',
+                      '${site.buildings.length} buildings · '
+                      '${site.wallsCaptured}/${site.wallsTotal} '
+                      '${SiteWording.of(site.kind).items} captured',
                       style: Theme.of(context).textTheme.bodyMedium?.copyWith(
                         color: AppColors.onSurfaceMuted,
                       ),

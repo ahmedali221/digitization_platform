@@ -8,6 +8,7 @@ import '../../../../core/domain/repositories/site_repository.dart';
 import '../../../../core/storage/directory_manager.dart';
 import '../../../../core/storage/gallery_backup_service.dart';
 import '../../../../core/theme/wall_status.dart';
+import '../../../sync_queue/domain/entities/sync_item_kind.dart';
 import '../../../sync_queue/domain/repositories/sync_enqueuer.dart';
 import '../../domain/entities/capture_quality.dart';
 import '../../domain/repositories/grid_capture_repository.dart';
@@ -73,7 +74,8 @@ class GridCaptureRepositoryImpl implements GridCaptureRepository {
       for (final c in session.cells) c.row * session.gridCols + c.col: c,
     };
     final cells = List.generate(session.gridRows * session.gridCols, (i) {
-      final cell = byPosition[i] ??
+      final cell =
+          byPosition[i] ??
           CaptureCellRecord(
             row: i ~/ session.gridCols,
             col: i % session.gridCols,
@@ -364,10 +366,11 @@ class GridCaptureRepositoryImpl implements GridCaptureRepository {
     });
 
     final wallName = _siteRepository.findWall(floorId, wallId)?.name ?? wallId;
-    await _syncEnqueuer.enqueueSession(
+    await _syncEnqueuer.enqueueCapture(
       wallId: wallId,
       siteId: session.siteId,
       displayName: wallName,
+      kind: SyncItemKind.gridSession,
     );
   }
 
@@ -429,7 +432,9 @@ class GridCaptureRepositoryImpl implements GridCaptureRepository {
     if (session == null) return;
     if (cellIndex < 0 || cellIndex >= session.cells.length) return;
 
-    session.cells[cellIndex] = session.cells[cellIndex].withQualityOverride(overridden);
+    session.cells[cellIndex] = session.cells[cellIndex].withQualityOverride(
+      overridden,
+    );
     _sessionLocal.put(session);
   }
 

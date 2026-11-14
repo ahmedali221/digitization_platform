@@ -177,10 +177,6 @@ class _Header extends StatelessWidget {
             children: [
               SyncStatusIcon(onTap: () => context.push('/sync')),
               CircleIconButton(
-                icon: Icons.assignment,
-                onTap: () => context.push('/unassigned'),
-              ),
-              CircleIconButton(
                 icon: Icons.logout,
                 onTap: () => _confirmLogout(context),
               ),

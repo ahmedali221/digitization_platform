@@ -12,9 +12,14 @@ class HiveTypeIds {
   static const int captureCellRecord = 5;
   static const int capturePhotoRecord = 6;
   static const int syncQueueItemRecord = 7;
-  static const int unassignedCaptureRecord = 8;
+  // 8 belonged to the unassigned-walls record. Not to be reused: a phone
+  // updated from an older build may still hold a box written with it.
   static const int cellQualityRecord = 9;
   static const int neighbourQualityRecord = 10;
   static const int shotQualityScoreRecord = 11;
   static const int followUpUploadRecord = 12;
+  static const int objectCaptureRecord = 13;
+  static const int objectPhotoRecord = 14;
+  static const int objectScanRecord = 15;
+  static const int scanShotRecord = 16;
 }

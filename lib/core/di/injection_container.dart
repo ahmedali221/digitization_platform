@@ -10,7 +10,7 @@ import '../../features/follow_up/data/repositories/follow_up_repository_impl.dar
 import '../../features/follow_up/domain/repositories/follow_up_repository.dart';
 import '../../features/follow_up/domain/repositories/new_target_repository.dart';
 import '../../features/follow_up/domain/services/follow_up_upload_runner.dart';
-import '../../features/grid_capture/data/datasources/camera_preferences_local_data_source.dart';
+import '../camera/camera_preferences_local_data_source.dart';
 import '../../features/grid_capture/data/datasources/capture_session_local_data_source.dart';
 import '../../features/grid_capture/data/datasources/grid_capture_local_data_source.dart';
 import '../../features/grid_capture/data/repositories/grid_capture_repository_impl.dart';
@@ -20,18 +20,29 @@ import '../../features/grid_capture/domain/services/capture_recovery_service.dar
 import '../../features/grid_capture/domain/services/cell_quality_analyzer.dart';
 import '../../features/map_navigation/data/repositories/map_geometry_repository_impl.dart';
 import '../../features/map_navigation/domain/repositories/map_geometry_repository.dart';
+import '../../features/object_capture/data/datasources/object_capture_local_data_source.dart';
+import '../../features/object_capture/data/datasources/object_capture_remote_data_source.dart';
+import '../../features/object_capture/data/repositories/object_capture_repository_impl.dart';
+import '../../features/object_capture/data/uploaders/object_photos_uploader.dart';
+import '../../features/object_capture/data/datasources/device_camera_motion_source.dart';
+import '../../features/object_capture/data/datasources/object_scan_local_data_source.dart';
+import '../../features/object_capture/data/datasources/object_scan_remote_data_source.dart';
+import '../../features/object_capture/data/repositories/object_scan_repository_impl.dart';
+import '../../features/object_capture/data/uploaders/object_scan_uploader.dart';
+import '../../features/object_capture/domain/repositories/object_capture_repository.dart';
+import '../../features/object_capture/domain/repositories/object_scan_repository.dart';
+import '../../features/object_capture/domain/services/camera_motion_source.dart';
 import '../../features/site_backup/domain/services/site_backup_service.dart';
 import '../../features/site_sync/domain/services/site_download_service.dart';
 import '../../features/sync_queue/data/datasources/sync_queue_local_data_source.dart';
 import '../../features/sync_queue/data/datasources/sync_remote_data_source.dart';
 import '../../features/sync_queue/data/repositories/sync_queue_repository_impl.dart';
+import '../../features/sync_queue/data/uploaders/grid_session_uploader.dart';
+import '../../features/sync_queue/domain/entities/sync_item_kind.dart';
 import '../../features/sync_queue/domain/repositories/sync_enqueuer.dart';
 import '../../features/sync_queue/domain/repositories/sync_queue_repository.dart';
+import '../../features/sync_queue/domain/services/field_item_registrar.dart';
 import '../../features/sync_queue/domain/services/sync_queue_runner.dart';
-import '../../features/unassigned_walls/data/datasources/unassigned_capture_local_data_source.dart';
-import '../../features/unassigned_walls/data/datasources/unassigned_wall_remote_data_source.dart';
-import '../../features/unassigned_walls/data/repositories/unassigned_wall_repository_impl.dart';
-import '../../features/unassigned_walls/domain/repositories/unassigned_wall_repository.dart';
 import '../data/datasources/site_local_data_source.dart';
 import '../data/datasources/site_remote_data_source.dart';
 import '../data/repositories/site_repository_impl.dart';
@@ -131,14 +142,51 @@ void setupDependencies() {
   GetIt.instance.registerLazySingleton<CaptureSessionLocalDataSource>(
     () => CaptureSessionLocalDataSource(),
   );
+  GetIt.instance.registerLazySingleton<ObjectCaptureLocalDataSource>(
+    () => ObjectCaptureLocalDataSource(
+      directoryManager: GetIt.instance<DirectoryManager>(),
+    ),
+  );
+  GetIt.instance.registerLazySingleton<ObjectScanLocalDataSource>(
+    () => ObjectScanLocalDataSource(
+      directoryManager: GetIt.instance<DirectoryManager>(),
+    ),
+  );
+  GetIt.instance.registerLazySingleton<ObjectScanRemoteDataSource>(
+    () => ObjectScanRemoteDataSource(GetIt.instance<Dio>()),
+  );
+  GetIt.instance.registerLazySingleton<FieldItemRegistrar>(
+    () => FieldItemRegistrar(
+      siteLocal: GetIt.instance<SiteLocalDataSource>(),
+      remote: GetIt.instance<SyncRemoteDataSource>(),
+      deviceIdProvider: GetIt.instance<DeviceIdProvider>(),
+    ),
+  );
+  // One uploader per kind of capture: a new kind is a new entry here, not a
+  // new branch in the runner.
   GetIt.instance.registerLazySingleton<SyncQueueRunner>(
     () => SyncQueueRunner(
       queueLocal: GetIt.instance<SyncQueueLocalDataSource>(),
-      sessionLocal: GetIt.instance<CaptureSessionLocalDataSource>(),
-      remote: GetIt.instance<SyncRemoteDataSource>(),
-      deviceIdProvider: GetIt.instance<DeviceIdProvider>(),
-      directoryManager: GetIt.instance<DirectoryManager>(),
-      galleryBackup: GetIt.instance<GalleryBackupService>(),
+      registrar: GetIt.instance<FieldItemRegistrar>(),
+      uploaders: {
+        SyncItemKind.gridSession: GridSessionUploader(
+          sessionLocal: GetIt.instance<CaptureSessionLocalDataSource>(),
+          remote: GetIt.instance<SyncRemoteDataSource>(),
+          deviceIdProvider: GetIt.instance<DeviceIdProvider>(),
+          directoryManager: GetIt.instance<DirectoryManager>(),
+          galleryBackup: GetIt.instance<GalleryBackupService>(),
+        ),
+        SyncItemKind.objectPhotos: ObjectPhotosUploader(
+          local: GetIt.instance<ObjectCaptureLocalDataSource>(),
+          remote: ObjectCaptureRemoteDataSource(GetIt.instance<Dio>()),
+          directoryManager: GetIt.instance<DirectoryManager>(),
+        ),
+        SyncItemKind.objectScan: ObjectScanUploader(
+          local: GetIt.instance<ObjectScanLocalDataSource>(),
+          remote: GetIt.instance<ObjectScanRemoteDataSource>(),
+          directoryManager: GetIt.instance<DirectoryManager>(),
+        ),
+      },
     ),
   );
   GetIt.instance.registerLazySingleton<SyncQueueRepositoryImpl>(
@@ -186,22 +234,24 @@ void setupDependencies() {
     ),
   );
 
-  GetIt.instance.registerLazySingleton<UnassignedCaptureLocalDataSource>(
-    () => UnassignedCaptureLocalDataSource(),
-  );
-  GetIt.instance.registerLazySingleton<UnassignedWallRemoteDataSource>(
-    () => UnassignedWallRemoteDataSource(GetIt.instance<Dio>()),
-  );
-  GetIt.instance.registerLazySingleton<UnassignedWallRepository>(
-    () => UnassignedWallRepositoryImpl(
-      siteLocal: GetIt.instance<SiteLocalDataSource>(),
+  GetIt.instance.registerLazySingleton<ObjectCaptureRepository>(
+    () => ObjectCaptureRepositoryImpl(
       siteRepository: GetIt.instance<SiteRepository>(),
-      captureLocal: GetIt.instance<UnassignedCaptureLocalDataSource>(),
-      remote: GetIt.instance<UnassignedWallRemoteDataSource>(),
-      deviceIdProvider: GetIt.instance<DeviceIdProvider>(),
-      sessionLocal: GetIt.instance<CaptureSessionLocalDataSource>(),
+      local: GetIt.instance<ObjectCaptureLocalDataSource>(),
       syncEnqueuer: GetIt.instance<SyncEnqueuer>(),
     ),
+  );
+
+  GetIt.instance.registerLazySingleton<ObjectScanRepository>(
+    () => ObjectScanRepositoryImpl(
+      siteRepository: GetIt.instance<SiteRepository>(),
+      local: GetIt.instance<ObjectScanLocalDataSource>(),
+      remote: GetIt.instance<ObjectScanRemoteDataSource>(),
+      syncEnqueuer: GetIt.instance<SyncEnqueuer>(),
+    ),
+  );
+  GetIt.instance.registerLazySingleton<CameraMotionSource>(
+    () => const DeviceCameraMotionSource(),
   );
 
   GetIt.instance.registerLazySingleton<FollowUpLocalDataSource>(
@@ -215,10 +265,14 @@ void setupDependencies() {
       local: GetIt.instance<FollowUpLocalDataSource>(),
       remote: GetIt.instance<FollowUpRemoteDataSource>(),
       resolveFile: GetIt.instance<DirectoryManager>().resolveExistingFile,
-      stitchedPreviewPath: (record) async => FollowUpRepositoryImpl.stitchedPreviewPath(
-        await GetIt.instance<DirectoryManager>().followUpDir(record.siteId, FollowUpRepositoryImpl.previewsFolder),
-        record.token,
-      ),
+      stitchedPreviewPath: (record) async =>
+          FollowUpRepositoryImpl.stitchedPreviewPath(
+            await GetIt.instance<DirectoryManager>().followUpDir(
+              record.siteId,
+              FollowUpRepositoryImpl.previewsFolder,
+            ),
+            record.token,
+          ),
     ),
   );
   GetIt.instance.registerLazySingleton<FollowUpRepositoryImpl>(
@@ -240,7 +294,7 @@ void setupDependencies() {
     () => SiteBackupService(
       siteRepository: GetIt.instance<SiteRepository>(),
       gridCaptureRepository: GetIt.instance<GridCaptureRepository>(),
-      unassignedWallRepository: GetIt.instance<UnassignedWallRepository>(),
+      objectCaptureRepository: GetIt.instance<ObjectCaptureRepository>(),
       directoryManager: GetIt.instance<DirectoryManager>(),
     ),
   );
@@ -263,7 +317,6 @@ void wireForegroundSyncOnReconnect() {
   ) {
     if (connected) {
       GetIt.instance<SyncQueueRunner>().drainAll();
-      GetIt.instance<UnassignedWallRepository>().checkAllResolutions();
       GetIt.instance<FollowUpUploadRunner>().drainAll();
     }
   });

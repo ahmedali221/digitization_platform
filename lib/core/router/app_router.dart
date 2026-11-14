@@ -8,15 +8,19 @@ import '../../features/grid_capture/presentation/pages/coverage_review_page.dart
 import '../../features/grid_capture/presentation/pages/grid_capture_page.dart';
 import '../../features/grid_capture/presentation/pages/grid_init_page.dart';
 import '../../features/grid_capture/presentation/pages/grid_reshape_page.dart';
-import '../../features/map_navigation/presentation/pages/add_wall_page.dart';
+import '../../features/map_navigation/presentation/pages/add_item_page.dart';
 import '../../features/map_navigation/presentation/pages/buildings_list_page.dart';
 import '../../features/map_navigation/presentation/pages/floor_walls_page.dart';
 import '../../features/map_navigation/presentation/pages/floors_list_page.dart';
 import '../../features/map_navigation/presentation/pages/wall_detail_page.dart';
+import '../../features/object_capture/presentation/object_capture_routes.dart';
+import '../../features/object_capture/presentation/pages/capture_mode_page.dart';
+import '../../features/object_capture/presentation/pages/free_capture_page.dart';
+import '../../features/object_capture/presentation/pages/scan_capture_page.dart';
+import '../../features/object_capture/presentation/pages/scan_status_page.dart';
+import '../../features/object_capture/presentation/pages/organised_capture_page.dart';
 import '../../features/site_sync/presentation/pages/sites_list_page.dart';
 import '../../features/sync_queue/presentation/pages/sync_queue_page.dart';
-import '../../features/unassigned_walls/presentation/pages/unassigned_wall_detail_page.dart';
-import '../../features/unassigned_walls/presentation/pages/unassigned_walls_page.dart';
 import '../domain/repositories/site_repository.dart';
 import '../network/session_notifier.dart';
 
@@ -54,11 +58,12 @@ final GoRouter appRouter = GoRouter(
       ),
     ),
     GoRoute(
-      path: '/sites/:siteId/buildings/:buildingId/floors/:floorId/add-wall',
-      builder: (context, state) => AddWallPage(
+      path: '/sites/:siteId/buildings/:buildingId/floors/:floorId/add-item',
+      builder: (context, state) => AddItemPage(
         siteId: state.pathParameters['siteId']!,
         buildingId: state.pathParameters['buildingId']!,
         floorId: state.pathParameters['floorId']!,
+        initialHallName: state.uri.queryParameters['hall'],
       ),
     ),
     GoRoute(
@@ -142,20 +147,51 @@ final GoRouter appRouter = GoRouter(
       builder: (context, state) =>
           FollowUpPage(siteId: state.pathParameters['siteId']!),
     ),
-    GoRoute(path: '/sync', builder: (context, state) => const SyncQueuePage()),
     GoRoute(
-      path: '/unassigned',
-      builder: (context, state) => const UnassignedWallsPage(),
+      path: '$_wallPath/${ObjectCaptureRoutes.modesSegment}',
+      builder: (context, state) =>
+          CaptureModePage(routes: _objectCaptureRoutes(state)),
     ),
     GoRoute(
       path:
-          '/sites/:siteId/buildings/:buildingId/floors/:floorId/unassigned/:localId',
-      builder: (context, state) => UnassignedWallDetailPage(
-        siteId: state.pathParameters['siteId']!,
-        buildingId: state.pathParameters['buildingId']!,
-        floorId: state.pathParameters['floorId']!,
-        localId: state.pathParameters['localId']!,
-      ),
+          '$_wallPath/${ObjectCaptureRoutes.modesSegment}/'
+          '${ObjectCaptureRoutes.organisedSegment}',
+      builder: (context, state) =>
+          OrganisedCapturePage(routes: _objectCaptureRoutes(state)),
     ),
+    GoRoute(
+      path:
+          '$_wallPath/${ObjectCaptureRoutes.modesSegment}/'
+          '${ObjectCaptureRoutes.freeSegment}',
+      builder: (context, state) =>
+          FreeCapturePage(routes: _objectCaptureRoutes(state)),
+    ),
+    GoRoute(
+      path:
+          '$_wallPath/${ObjectCaptureRoutes.modesSegment}/'
+          '${ObjectCaptureRoutes.scanSegment}',
+      builder: (context, state) =>
+          ScanCapturePage(routes: _objectCaptureRoutes(state)),
+    ),
+    GoRoute(
+      path:
+          '$_wallPath/${ObjectCaptureRoutes.modesSegment}/'
+          '${ObjectCaptureRoutes.scanStatusSegment}',
+      builder: (context, state) =>
+          ScanStatusPage(routes: _objectCaptureRoutes(state)),
+    ),
+    GoRoute(path: '/sync', builder: (context, state) => const SyncQueuePage()),
   ],
 );
+
+const _wallPath =
+    '/sites/:siteId/buildings/:buildingId/floors/:floorId/walls/:wallId';
+
+ObjectCaptureRoutes _objectCaptureRoutes(GoRouterState state) {
+  return ObjectCaptureRoutes(
+    siteId: state.pathParameters['siteId']!,
+    buildingId: state.pathParameters['buildingId']!,
+    floorId: state.pathParameters['floorId']!,
+    wallId: state.pathParameters['wallId']!,
+  );
+}

@@ -22,6 +22,7 @@ import androidx.core.content.ContextCompat
 import com.google.ar.core.ArCoreApk
 import io.flutter.embedding.android.FlutterActivity
 import io.flutter.embedding.engine.FlutterEngine
+import io.flutter.plugin.common.EventChannel
 import io.flutter.plugin.common.MethodChannel
 import java.io.File
 import java.io.IOException
@@ -48,6 +49,7 @@ class MainActivity : FlutterActivity() {
     private val lensInfoChannelName = "nilelens/lens_info"
     private val arMeasureChannelName = "nilelens/ar_measure"
     private val screenOrientationChannelName = "nilelens/screen_orientation"
+    private val deviceMotionChannelName = "nilelens/device_motion"
     private val downloadsSubfolder = "NileLens"
 
     private val arMeasureRequestCode = 0x4152
@@ -102,6 +104,9 @@ class MainActivity : FlutterActivity() {
                 else -> result.notImplemented()
             }
         }
+
+        EventChannel(flutterEngine.dartExecutor.binaryMessenger, deviceMotionChannelName)
+            .setStreamHandler(DeviceMotionStreamHandler(this))
 
         val lensInfoChannel =
             MethodChannel(flutterEngine.dartExecutor.binaryMessenger, lensInfoChannelName)

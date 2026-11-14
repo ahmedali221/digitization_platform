@@ -11,13 +11,23 @@ class ApiEndpoints {
   static String sitePublishStatus(String siteId) =>
       '/sites/$siteId/publish-status';
 
-  static const String syncUnassigned = '/sync/unassigned';
-  static const String syncMappings = '/sync/mappings';
+  static String floorItems(String floorId) => '/floors/$floorId/items';
+
   static const String syncSessions = '/sync/sessions';
   static String syncSessionConfirm(String sessionId) =>
       '/sync/sessions/$sessionId/confirm';
 
   static String wallCaptures(String wallId) => '/walls/$wallId/captures';
+  static String wallObjectPhotos(String wallId) =>
+      '/walls/$wallId/object-photos';
+  static String wallObjectPhotosComplete(String wallId) =>
+      '/walls/$wallId/object-photos/complete';
+
+  static String wallScans(String wallId) => '/walls/$wallId/scans';
+  static String scan(int scanId) => '/scans/$scanId';
+  static String scanPhotos(int scanId) => '/scans/$scanId/photos';
+  static String scanComplete(int scanId) => '/scans/$scanId/complete';
+  static String scanPreview(int scanId) => '/scans/$scanId/preview';
 
   static String followUpPackage(String siteId) =>
       '/sites/$siteId/follow-up-package';

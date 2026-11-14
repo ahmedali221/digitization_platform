@@ -35,7 +35,7 @@ lib/
 
   features/
     <feature_name>/              e.g. site_sync, map_navigation, grid_capture,
-                                  unassigned_walls, quick_start, sync_queue
+                                  object_capture, quick_start, sync_queue
       data/
         models/                  DTOs / Hive adapters
         datasources/             remote_data_source.dart (dio), local_data_source.dart (hive)

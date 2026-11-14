@@ -26,13 +26,14 @@ class SitePackageRecordAdapter extends TypeAdapter<SitePackageRecord> {
       localVersion: fields[6] as int?,
       downloadedAt: fields[7] as DateTime?,
       isArchived: fields[8] == null ? false : fields[8] as bool,
+      kind: fields[9] as String?,
     );
   }
 
   @override
   void write(BinaryWriter writer, SitePackageRecord obj) {
     writer
-      ..writeByte(9)
+      ..writeByte(10)
       ..writeByte(0)
       ..write(obj.siteId)
       ..writeByte(1)
@@ -50,7 +51,9 @@ class SitePackageRecordAdapter extends TypeAdapter<SitePackageRecord> {
       ..writeByte(7)
       ..write(obj.downloadedAt)
       ..writeByte(8)
-      ..write(obj.isArchived);
+      ..write(obj.isArchived)
+      ..writeByte(9)
+      ..write(obj.kind);
   }
 
   @override

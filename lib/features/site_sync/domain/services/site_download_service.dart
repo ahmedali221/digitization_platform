@@ -112,6 +112,7 @@ class SiteDownloadService {
       (existing ?? SitePackageRecord(siteId: siteId, name: bundle.siteName))
           .copyWith(
             name: bundle.siteName,
+            kind: (bundle.siteJson['site'] as Map)['kind'] as String?,
             raw: bundle.siteJson,
             localVersion: bundle.manifest.version,
             latestVersion: bundle.manifest.version,

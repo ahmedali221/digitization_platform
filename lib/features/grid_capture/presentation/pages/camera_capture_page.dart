@@ -13,7 +13,7 @@ import '../../../../core/theme/app_colors.dart';
 import '../../../../core/theme/app_spacing.dart';
 import '../../../../core/utils/navigation_extensions.dart';
 import '../../../../core/widgets/feedback_states.dart';
-import '../../data/datasources/camera_preferences_local_data_source.dart';
+import '../../../../core/camera/camera_preferences_local_data_source.dart';
 import '../../data/datasources/grid_capture_local_data_source.dart';
 import '../../domain/entities/capture_quality.dart';
 import '../../domain/repositories/grid_capture_repository.dart';
@@ -131,7 +131,8 @@ class _CameraBodyState extends State<_CameraBody> {
     _autoAdvance = _preferences.getAutoAdvance();
     _camera = CaptureCameraSession(
       initialFlashModeName: _preferences.getFlashModeName(),
-      onFlashModeChanged: (name) => unawaited(_preferences.setFlashModeName(name)),
+      onFlashModeChanged: (name) =>
+          unawaited(_preferences.setFlashModeName(name)),
       onMessage: _showMessage,
       onShutterPressed: _handleShutter,
     )..addListener(_onCameraChanged);
@@ -144,7 +145,9 @@ class _CameraBodyState extends State<_CameraBody> {
 
   void _showMessage(String message) {
     if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(message)));
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(SnackBar(content: Text(message)));
   }
 
   Future<void> _handleShutter() => _camera.capture((file) async {
@@ -154,7 +157,10 @@ class _CameraBodyState extends State<_CameraBody> {
   });
 
   Future<void> _handleDeletePhoto(int cellId, String path) async {
-    if (_camera.capturing || _camera.switchingLens || _deletingPaths.contains(path)) return;
+    if (_camera.capturing ||
+        _camera.switchingLens ||
+        _deletingPaths.contains(path))
+      return;
     final confirmed = await _confirmDeletePhoto();
     if (!mounted || !confirmed) return;
     setState(() => _deletingPaths.add(path));
@@ -257,7 +263,9 @@ class _CameraBodyState extends State<_CameraBody> {
           QualityBadge(
             result: widget.state.cellQuality[activeCellId],
             analyzing: widget.state.analyzingCellIds.contains(activeCellId),
-            onToggleOverride: () => context.read<CaptureSessionCubit>().toggleQualityOverride(activeCellId),
+            onToggleOverride: () => context
+                .read<CaptureSessionCubit>()
+                .toggleQualityOverride(activeCellId),
           ),
         ],
       ),
@@ -273,7 +281,10 @@ class _CameraBodyState extends State<_CameraBody> {
           const SizedBox(height: AppSpacing.sm),
           CameraFlashButton(mode: _camera.flashMode, onTap: _camera.cycleFlash),
           const SizedBox(height: AppSpacing.sm),
-          _AutoAdvanceToggleButton(enabled: _autoAdvance, onTap: _toggleAutoAdvance),
+          _AutoAdvanceToggleButton(
+            enabled: _autoAdvance,
+            onTap: _toggleAutoAdvance,
+          ),
         ],
       ),
       zoom: _camera.loadState == CameraLoadState.ready
@@ -301,7 +312,9 @@ class _CameraBodyState extends State<_CameraBody> {
               deletingPaths: _deletingPaths,
               onDelete: (path) => _handleDeletePhoto(activeCellId, path),
             ),
-      shutter: CameraShutterButton(onTap: _camera.canShoot ? _handleShutter : null),
+      shutter: CameraShutterButton(
+        onTap: _camera.canShoot ? _handleShutter : null,
+      ),
     );
   }
 }
@@ -339,7 +352,11 @@ class _AutoAdvanceToggleButton extends StatelessWidget {
                   color: enabled ? AppColors.seed : AppColors.cameraScrim,
                   shape: BoxShape.circle,
                 ),
-                child: const Icon(Icons.skip_next, size: 20, color: Colors.white),
+                child: const Icon(
+                  Icons.skip_next,
+                  size: 20,
+                  color: Colors.white,
+                ),
               ),
             ),
           ),
@@ -421,7 +438,8 @@ class _ThumbnailStrip extends StatelessWidget {
       scrollDirection: axis,
       shrinkWrap: axis == Axis.vertical,
       itemCount: shotPaths.length,
-      separatorBuilder: (_, _) => const SizedBox.square(dimension: AppSpacing.sm),
+      separatorBuilder: (_, _) =>
+          const SizedBox.square(dimension: AppSpacing.sm),
       itemBuilder: (context, index) {
         final path = shotPaths[index];
         return Center(
@@ -435,7 +453,9 @@ class _ThumbnailStrip extends StatelessWidget {
         );
       },
     );
-    return axis == Axis.horizontal ? SizedBox(height: _ThumbnailTile.size, child: list) : list;
+    return axis == Axis.horizontal
+        ? SizedBox(height: _ThumbnailTile.size, child: list)
+        : list;
   }
 }
 
@@ -478,7 +498,12 @@ class _ThumbnailTile extends StatelessWidget {
         children: [
           Positioned.fill(
             child: InkWell(
-              onTap: () => ImagePreviewDialog.show(context, path, score: score, isMain: isMain),
+              onTap: () => ImagePreviewDialog.show(
+                context,
+                path,
+                score: score,
+                isMain: isMain,
+              ),
               child: Image.file(
                 File(path),
                 fit: BoxFit.cover,
@@ -489,7 +514,8 @@ class _ThumbnailTile extends StatelessWidget {
                 // spike that makes the capture screen stutter right after
                 // every shutter press (see grid_cell_tile.dart for the same
                 // fix applied to the grid overview).
-                cacheWidth: (size * MediaQuery.devicePixelRatioOf(context)).round(),
+                cacheWidth: (size * MediaQuery.devicePixelRatioOf(context))
+                    .round(),
                 errorBuilder: (context, error, stackTrace) => const Center(
                   child: Icon(
                     Icons.image,
@@ -504,7 +530,9 @@ class _ThumbnailTile extends StatelessWidget {
             Positioned(
               bottom: 2,
               left: 2,
-              child: IgnorePointer(child: QualityDot(tier: score!.tier, size: 10)),
+              child: IgnorePointer(
+                child: QualityDot(tier: score!.tier, size: 10),
+              ),
             ),
           if (isMain)
             Positioned(
@@ -512,7 +540,10 @@ class _ThumbnailTile extends StatelessWidget {
               left: 2,
               child: IgnorePointer(
                 child: Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 1),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 4,
+                    vertical: 1,
+                  ),
                   decoration: BoxDecoration(
                     color: AppColors.cameraScrim,
                     borderRadius: BorderRadius.circular(4),

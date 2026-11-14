@@ -13,15 +13,15 @@ import '../../../../core/domain/entities/wall.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../../../core/theme/app_spacing.dart';
 import '../../../../core/widgets/primary_action_button.dart';
-import '../../../grid_capture/data/datasources/camera_preferences_local_data_source.dart';
+import '../../../../core/camera/camera_preferences_local_data_source.dart';
 import '../../../grid_capture/domain/services/cell_quality_analyzer.dart';
 import '../../../grid_capture/presentation/widgets/camera_grid_navigator.dart';
 import '../../../grid_capture/presentation/widgets/grid_cell_tile.dart';
 import '../../../grid_capture/presentation/widgets/grid_stepper_row.dart';
 import '../../../grid_capture/presentation/widgets/linked_coverage_grid.dart';
 import '../cubit/follow_up_grid_cubit.dart';
-import '../widgets/captured_photo_review.dart';
-import '../widgets/captured_photo_thumbnail.dart';
+import '../../../../core/widgets/captured_photo_review.dart';
+import '../../../../core/widgets/captured_photo_thumbnail.dart';
 import '../widgets/save_failed_notice.dart';
 
 /// A grid of photographs of something too long for one sharp shot: choose its
@@ -32,7 +32,12 @@ import '../widgets/save_failed_notice.dart';
 /// stays open until [onSend] succeeds, so that a failure costs no photographs,
 /// and pops with true when it has.
 class FollowUpGridPage extends StatelessWidget {
-  const FollowUpGridPage({super.key, required this.title, required this.folder, required this.onSend});
+  const FollowUpGridPage({
+    super.key,
+    required this.title,
+    required this.folder,
+    required this.onSend,
+  });
 
   final String title;
   final String folder;
@@ -47,10 +52,15 @@ class FollowUpGridPage extends StatelessWidget {
   }
 }
 
-String _cellName(int cell, int cols) => 'R${cell ~/ cols + 1}C${cell % cols + 1}';
+String _cellName(int cell, int cols) =>
+    'R${cell ~/ cols + 1}C${cell % cols + 1}';
 
 class _GridBody extends StatelessWidget {
-  const _GridBody({required this.title, required this.folder, required this.onSend});
+  const _GridBody({
+    required this.title,
+    required this.folder,
+    required this.onSend,
+  });
 
   final String title;
   final String folder;
@@ -62,14 +72,15 @@ class _GridBody extends StatelessWidget {
     if (await cubit.send(onSend)) navigator.pop(true);
   }
 
-  Future<void> _openCamera(BuildContext context) => Navigator.of(context).push<void>(
-    MaterialPageRoute(
-      builder: (_) => BlocProvider.value(
-        value: context.read<FollowUpGridCubit>(),
-        child: _GridCameraPage(title: title, folder: folder),
-      ),
-    ),
-  );
+  Future<void> _openCamera(BuildContext context) =>
+      Navigator.of(context).push<void>(
+        MaterialPageRoute(
+          builder: (_) => BlocProvider.value(
+            value: context.read<FollowUpGridCubit>(),
+            child: _GridCameraPage(title: title, folder: folder),
+          ),
+        ),
+      );
 
   Future<void> _confirmLeaving(BuildContext context) async {
     final navigator = Navigator.of(context);
@@ -79,8 +90,14 @@ class _GridBody extends StatelessWidget {
         title: const Text('Discard these photographs?'),
         content: const Text('None of this grid has been sent yet.'),
         actions: [
-          TextButton(onPressed: () => Navigator.of(dialog).pop(false), child: const Text('Keep going')),
-          TextButton(onPressed: () => Navigator.of(dialog).pop(true), child: const Text('Discard')),
+          TextButton(
+            onPressed: () => Navigator.of(dialog).pop(false),
+            child: const Text('Keep going'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.of(dialog).pop(true),
+            child: const Text('Discard'),
+          ),
         ],
       ),
     );
@@ -101,7 +118,10 @@ class _GridBody extends StatelessWidget {
             appBar: AppBar(title: Text(title)),
             body: SafeArea(
               child: state.photos.isEmpty
-                  ? _ChooseSize(state: state, onStart: () => _openCamera(context))
+                  ? _ChooseSize(
+                      state: state,
+                      onStart: () => _openCamera(context),
+                    )
                   : _Review(
                       state: state,
                       onOpenCamera: () => _openCamera(context),
@@ -148,10 +168,16 @@ class _ChooseSize extends StatelessWidget {
         const SizedBox(height: AppSpacing.sm),
         Text(
           '${state.cellCount} photographs',
-          style: Theme.of(context).textTheme.bodySmall?.copyWith(color: AppColors.onSurfaceMuted),
+          style: Theme.of(
+            context,
+          ).textTheme.bodySmall?.copyWith(color: AppColors.onSurfaceMuted),
         ),
         const SizedBox(height: AppSpacing.xl),
-        PrimaryActionButton(icon: Icons.photo_camera, label: 'Start', onTap: onStart),
+        PrimaryActionButton(
+          icon: Icons.photo_camera,
+          label: 'Start',
+          onTap: onStart,
+        ),
       ],
     );
   }
@@ -160,7 +186,11 @@ class _ChooseSize extends StatelessWidget {
 /// Every cell and how its neighbours join, before anything is sent. A cell with
 /// a photograph opens it, to delete or retake; an empty one opens the camera.
 class _Review extends StatelessWidget {
-  const _Review({required this.state, required this.onOpenCamera, required this.onSend});
+  const _Review({
+    required this.state,
+    required this.onOpenCamera,
+    required this.onSend,
+  });
 
   final FollowUpGridState state;
   final VoidCallback onOpenCamera;
@@ -237,7 +267,9 @@ class _Review extends StatelessWidget {
                     'Not enough overlap: '
                     '${weak.map((link) => '${_cellName(link.from, state.cols)} and ${_cellName(link.to, state.cols)}').join(', ')}. '
                     'Tap one to check or retake it.',
-                    style: textTheme.bodySmall?.copyWith(color: AppColors.onWarningContainer),
+                    style: textTheme.bodySmall?.copyWith(
+                      color: AppColors.onWarningContainer,
+                    ),
                   ),
                 ),
                 const SizedBox(height: AppSpacing.md),
@@ -291,16 +323,21 @@ class _GridCameraPage extends StatefulWidget {
 class _GridCameraPageState extends State<_GridCameraPage> {
   late final CaptureCameraSession _camera;
 
-  final CameraPreferencesLocalDataSource _preferences = GetIt.instance<CameraPreferencesLocalDataSource>();
+  final CameraPreferencesLocalDataSource _preferences =
+      GetIt.instance<CameraPreferencesLocalDataSource>();
 
   @override
   void initState() {
     super.initState();
     _camera = CaptureCameraSession(
       initialFlashModeName: _preferences.getFlashModeName(),
-      onFlashModeChanged: (name) => unawaited(_preferences.setFlashModeName(name)),
+      onFlashModeChanged: (name) =>
+          unawaited(_preferences.setFlashModeName(name)),
       onMessage: (message) {
-        if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(message)));
+        if (mounted)
+          ScaffoldMessenger.of(
+            context,
+          ).showSnackBar(SnackBar(content: Text(message)));
       },
       onShutterPressed: _shoot,
     )..addListener(_onCameraChanged);
@@ -321,7 +358,10 @@ class _GridCameraPageState extends State<_GridCameraPage> {
   Future<void> _keep(XFile file) async {
     final cubit = context.read<FollowUpGridCubit>();
     final navigator = Navigator.of(context);
-    final path = p.join(widget.folder, 'cell_${cubit.state.activeCell}_${DateTime.now().millisecondsSinceEpoch}.jpg');
+    final path = p.join(
+      widget.folder,
+      'cell_${cubit.state.activeCell}_${DateTime.now().millisecondsSinceEpoch}.jpg',
+    );
     await file.saveTo(path);
 
     final wasIncomplete = !cubit.state.isComplete;
@@ -368,8 +408,14 @@ class _GridCameraPageState extends State<_GridCameraPage> {
             iconColor: Colors.white,
             onTap: () => Navigator.of(context).pop(),
           ),
-          topCenter: CameraPill(label: '${widget.title} · ${_cellName(state.activeCell, state.cols)}'),
-          topEnd: CameraFlashButton(mode: _camera.flashMode, onTap: _camera.cycleFlash),
+          topCenter: CameraPill(
+            label:
+                '${widget.title} · ${_cellName(state.activeCell, state.cols)}',
+          ),
+          topEnd: CameraFlashButton(
+            mode: _camera.flashMode,
+            onTap: _camera.cycleFlash,
+          ),
           zoom: _camera.loadState == CameraLoadState.ready
               ? CameraZoomPresets(
                   currentZoom: _camera.displayZoom,
@@ -385,7 +431,11 @@ class _GridCameraPageState extends State<_GridCameraPage> {
               cols: state.cols,
               cells: [
                 for (var cell = 0; cell < state.cellCount; cell++)
-                  GridCell(shotPaths: [if (state.photos[cell] != null) state.photos[cell]!]),
+                  GridCell(
+                    shotPaths: [
+                      if (state.photos[cell] != null) state.photos[cell]!,
+                    ],
+                  ),
               ],
             ),
             activeCellIndex: state.activeCell,
@@ -398,11 +448,15 @@ class _GridCameraPageState extends State<_GridCameraPage> {
               : (_) => CapturedPhotoThumbnail(
                   path: state.photos[reviewableCell]!,
                   label: _cellName(reviewableCell, state.cols),
-                  onTap: _camera.capturing ? null : () => _reviewCell(state, reviewableCell),
+                  onTap: _camera.capturing
+                      ? null
+                      : () => _reviewCell(state, reviewableCell),
                 ),
           shutter: CameraShutterButton(onTap: _camera.canShoot ? _shoot : null),
           finish: FilledButton(
-            onPressed: state.photos.isEmpty || _camera.capturing ? null : () => Navigator.of(context).pop(),
+            onPressed: state.photos.isEmpty || _camera.capturing
+                ? null
+                : () => Navigator.of(context).pop(),
             child: Text('Review (${state.photos.length}/${state.cellCount})'),
           ),
         ),

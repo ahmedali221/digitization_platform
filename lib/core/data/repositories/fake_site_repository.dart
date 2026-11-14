@@ -2,6 +2,7 @@ import 'dart:async';
 
 import '../../domain/entities/building.dart';
 import '../../domain/entities/floor.dart';
+import '../../domain/entities/new_item_draft.dart';
 import '../../domain/entities/site.dart';
 import '../../domain/entities/wall.dart';
 import '../../domain/repositories/site_repository.dart';
@@ -19,7 +20,7 @@ class FakeSiteRepository implements SiteRepository {
   late List<SiteEntity> _sites;
   late final StreamController<List<SiteEntity>> _controller;
   Timer? _downloadTimer;
-  int _nextWallSuffix = 0;
+  int _addedItemCount = 0;
 
   @override
   Stream<List<SiteEntity>> watchSites() async* {
@@ -382,7 +383,7 @@ class FakeSiteRepository implements SiteRepository {
             if (wall.id != wallId) return wall;
             return update(wall);
           }).toList();
-          return floor.copyWithWalls(walls);
+          return floor.copyWith(walls: walls);
         }).toList();
         return building.copyWithFloors(floors);
       }).toList();
@@ -392,32 +393,36 @@ class FakeSiteRepository implements SiteRepository {
   }
 
   @override
-  void addWall(
-    String floorId, {
-    required String title,
-    String notes = '',
-    String? roomLabel,
-  }) {
+  Future<String> addItem(String floorId, NewItemDraft draft) async {
+    // A local id, as the real repository gives an added item — and not the
+    // seeded walls' `{floorId}-w{n}` scheme, which the first added item on
+    // any floor would otherwise collide with.
+    final itemId = '${WallEntity.localIdPrefix}fake${_addedItemCount++}';
     _sites = _sites.map((site) {
       final buildings = site.buildings.map((building) {
         final floors = building.floors.map((floor) {
           if (floor.id != floorId) return floor;
-          final wall = WallEntity(
-            id: '$floorId-w${_nextWallSuffix++}',
+          final item = WallEntity(
+            id: itemId,
             floorId: floorId,
-            name: title,
-            notes: notes,
+            name: draft.name,
+            notes: draft.notes,
             status: WallStatus.notStarted,
             lastCapture: '—',
-            roomLabel: roomLabel,
+            roomLabel: draft.hall?.name,
+            hallId: draft.hall?.id,
+            objectType: draft.objectType,
+            captureMode: draft.objectType.captureMode,
+            metadata: draft.metadata,
           );
-          return floor.copyWithWalls([...floor.walls, wall]);
+          return floor.copyWith(walls: [...floor.walls, item]);
         }).toList();
         return building.copyWithFloors(floors);
       }).toList();
       return site.copyWith(buildings: buildings);
     }).toList();
     _controller.add(_sites);
+    return itemId;
   }
 
   void _mutateSite(String siteId, SiteEntity Function(SiteEntity) update) {

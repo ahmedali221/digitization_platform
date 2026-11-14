@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../../../../core/domain/entities/site.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../../../core/theme/app_spacing.dart';
+import '../../../../core/theme/object_type_meta.dart';
 import '../../../../core/widgets/circle_icon_button.dart';
 import '../../../../core/widgets/thin_progress_bar.dart';
 
@@ -83,7 +84,11 @@ class _TitleRow extends StatelessWidget {
               ),
               const SizedBox(height: 2),
               Text(
-                site.location,
+                // A museum says so: its floors hold objects, not only walls.
+                [
+                  if (site.isMuseum) 'Museum',
+                  if (site.location.isNotEmpty) site.location,
+                ].join(' · '),
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
                 style: textTheme.bodyMedium?.copyWith(
@@ -336,7 +341,8 @@ class _ReadySummaryRow extends StatelessWidget {
       children: [
         Expanded(
           child: Text(
-            '${site.wallsCaptured}/${site.wallsTotal} walls · Synced ${site.lastSynced}',
+            '${site.wallsCaptured}/${site.wallsTotal} '
+            '${SiteWording.of(site.kind).items} · Synced ${site.lastSynced}',
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
             style: Theme.of(

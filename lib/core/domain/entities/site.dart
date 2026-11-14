@@ -1,6 +1,7 @@
 import 'package:equatable/equatable.dart';
 
 import 'building.dart';
+import 'object_type.dart';
 import 'wall.dart';
 
 /// Whether a site's bundle is on-device yet (FLUTTER_MOBILE_PLAN.md §Phase 1).
@@ -13,6 +14,7 @@ class SiteEntity extends Equatable {
     required this.location,
     required this.availability,
     required this.buildings,
+    this.kind = SiteKind.site,
     this.wallsTotalOverride,
     this.downloadProgress = 0,
     this.lastSynced = '—',
@@ -25,6 +27,7 @@ class SiteEntity extends Equatable {
   final String location;
   final SiteAvailability availability;
   final List<BuildingEntity> buildings;
+  final SiteKind kind;
 
   /// Published wall count shown before a site is ready. The fake repository
   /// still carries the site's nested buildings, floors, and walls in memory
@@ -41,6 +44,8 @@ class SiteEntity extends Equatable {
   /// bundle — an operator's "not doing this one right now" flag, distinct
   /// from [SiteAvailability] which tracks download state.
   final bool isArchived;
+
+  bool get isMuseum => kind == SiteKind.museum;
 
   bool get isReady => availability == SiteAvailability.ready;
   bool get isDownloading => availability == SiteAvailability.downloading;
@@ -73,6 +78,7 @@ class SiteEntity extends Equatable {
       location: location,
       availability: availability ?? this.availability,
       buildings: buildings ?? this.buildings,
+      kind: kind,
       wallsTotalOverride: wallsTotalOverride,
       downloadProgress: downloadProgress ?? this.downloadProgress,
       lastSynced: lastSynced ?? this.lastSynced,
@@ -88,6 +94,7 @@ class SiteEntity extends Equatable {
     location,
     availability,
     buildings,
+    kind,
     wallsTotalOverride,
     downloadProgress,
     lastSynced,

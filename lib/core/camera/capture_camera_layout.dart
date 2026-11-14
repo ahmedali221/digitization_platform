@@ -85,13 +85,18 @@ class _CaptureCameraLayoutState extends State<CaptureCameraLayout> {
             children: [
               Expanded(child: viewfinder),
               widget.gridMap ?? const SizedBox.shrink(),
-              _UprightFooter(shots: widget.shots, shutter: widget.shutter, finish: widget.finish),
+              _UprightFooter(
+                shots: widget.shots,
+                shutter: widget.shutter,
+                finish: widget.finish,
+              ),
             ],
           );
         }
-        final railWidth = (constraints.maxWidth * CameraMetrics.railWidthFraction)
-            .clamp(CameraMetrics.railMinWidth, CameraMetrics.railMaxWidth)
-            .toDouble();
+        final railWidth =
+            (constraints.maxWidth * CameraMetrics.railWidthFraction)
+                .clamp(CameraMetrics.railMinWidth, CameraMetrics.railMaxWidth)
+                .toDouble();
         return Row(
           children: [
             Expanded(child: viewfinder),
@@ -132,17 +137,40 @@ class _ViewfinderWithOverlays extends StatelessWidget {
       alignment: Alignment.center,
       children: [
         viewfinder,
-        if (topStart != null) PositionedDirectional(top: AppSpacing.lg, start: AppSpacing.lg, child: topStart!),
-        if (topCenter != null) Positioned(top: AppSpacing.lg, child: topCenter!),
-        if (topEnd != null) PositionedDirectional(top: AppSpacing.lg, end: AppSpacing.lg, child: topEnd!),
-        if (zoom != null) Positioned(bottom: AppSpacing.md, child: zoom!),
+        if (topStart != null)
+          PositionedDirectional(
+            top: AppSpacing.lg,
+            start: AppSpacing.lg,
+            child: topStart!,
+          ),
+        if (topCenter != null)
+          Positioned(top: AppSpacing.lg, child: topCenter!),
+        if (topEnd != null)
+          PositionedDirectional(
+            top: AppSpacing.lg,
+            end: AppSpacing.lg,
+            child: topEnd!,
+          ),
+        // Given the viewfinder's width to stay inside: an overlay with words in it
+        // (the scan's guidance) wraps instead of running off both edges.
+        if (zoom != null)
+          Positioned(
+            bottom: AppSpacing.md,
+            left: AppSpacing.lg,
+            right: AppSpacing.lg,
+            child: Center(child: zoom!),
+          ),
       ],
     );
   }
 }
 
 class _UprightFooter extends StatelessWidget {
-  const _UprightFooter({required this.shots, required this.shutter, required this.finish});
+  const _UprightFooter({
+    required this.shots,
+    required this.shutter,
+    required this.finish,
+  });
 
   final Widget Function(Axis axis)? shots;
   final Widget shutter;
@@ -155,13 +183,19 @@ class _UprightFooter extends StatelessWidget {
       child: Row(
         children: [
           Expanded(
-            child: Align(alignment: AlignmentDirectional.centerStart, child: shots?.call(Axis.horizontal)),
+            child: Align(
+              alignment: AlignmentDirectional.centerStart,
+              child: shots?.call(Axis.horizontal),
+            ),
           ),
           const SizedBox(width: AppSpacing.md),
           shutter,
           const SizedBox(width: AppSpacing.md),
           Expanded(
-            child: Align(alignment: AlignmentDirectional.centerEnd, child: finish),
+            child: Align(
+              alignment: AlignmentDirectional.centerEnd,
+              child: finish,
+            ),
           ),
         ],
       ),

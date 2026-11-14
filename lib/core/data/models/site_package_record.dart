@@ -23,6 +23,7 @@ class SitePackageRecord extends HiveObject {
     this.localVersion,
     this.downloadedAt,
     this.isArchived = false,
+    this.kind,
   });
 
   @HiveField(0)
@@ -60,7 +61,19 @@ class SitePackageRecord extends HiveObject {
   @HiveField(8, defaultValue: false)
   final bool isArchived;
 
+  /// `site` or `museum`, from `GET /sites` — known before any download, so
+  /// the sites list can already tell the two apart. Null for a record
+  /// written before museums existed, which reads as a site.
+  @HiveField(9)
+  final String? kind;
+
   bool get isDownloaded => raw != null;
+
+  /// When the downloaded bundle was built, by the server's clock.
+  DateTime? get bundlePublishedAt {
+    final publishedAt = (raw?['site'] as Map?)?['published_at'] as String?;
+    return publishedAt == null ? null : DateTime.tryParse(publishedAt);
+  }
 
   SitePackageRecord copyWith({
     String? name,
@@ -71,6 +84,7 @@ class SitePackageRecord extends HiveObject {
     int? localVersion,
     DateTime? downloadedAt,
     bool? isArchived,
+    String? kind,
   }) {
     return SitePackageRecord(
       siteId: siteId,
@@ -82,6 +96,7 @@ class SitePackageRecord extends HiveObject {
       localVersion: localVersion ?? this.localVersion,
       downloadedAt: downloadedAt ?? this.downloadedAt,
       isArchived: isArchived ?? this.isArchived,
+      kind: kind ?? this.kind,
     );
   }
 }

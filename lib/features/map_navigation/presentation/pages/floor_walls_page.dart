@@ -4,10 +4,12 @@ import 'package:get_it/get_it.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../../../core/domain/entities/canvas_shape.dart';
+import '../../../../core/domain/entities/object_type.dart';
 import '../../../../core/domain/entities/wall.dart';
 import '../../../../core/domain/repositories/site_repository.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../../../core/theme/app_spacing.dart';
+import '../../../../core/theme/object_type_meta.dart';
 import '../../../../core/theme/wall_status.dart';
 import '../../../../core/utils/canvas_layout.dart';
 import '../../../../core/utils/navigation_extensions.dart';
@@ -22,9 +24,9 @@ import '../widgets/overview_metrics.dart';
 import '../widgets/shape_canvas.dart';
 import '../widgets/wall_row.dart';
 
-/// Floor-level page: lists a floor's walls, with an "Add wall" action and a
-/// tap-to-open entry point into each wall's detail page — the walls tab
-/// between a building's floor selection and an individual wall.
+/// Floor-level page: lists a floor's walls and objects, with an "Add" action
+/// and a tap-to-open entry point into each one's detail page — the step
+/// between a building's floor selection and an individual wall or object.
 class FloorWallsPage extends StatelessWidget {
   const FloorWallsPage({
     super.key,
@@ -76,6 +78,7 @@ class FloorWallsPage extends StatelessWidget {
                     floorName: floor.name,
                     walls: floor.walls,
                     geometry: geometry,
+                    wording: SiteWording.of(site.kind),
                   ),
               };
             },
@@ -96,6 +99,7 @@ class _FloorWallsContent extends StatefulWidget {
     required this.floorName,
     required this.walls,
     required this.geometry,
+    required this.wording,
   });
 
   final String siteId;
@@ -107,6 +111,9 @@ class _FloorWallsContent extends StatefulWidget {
   final List<WallEntity> walls;
   final FloorRoomsGeometry? geometry;
 
+  /// Whether this floor's records are called walls or objects.
+  final SiteWording wording;
+
   @override
   State<_FloorWallsContent> createState() => _FloorWallsContentState();
 }
@@ -114,9 +121,25 @@ class _FloorWallsContent extends StatefulWidget {
 class _FloorWallsContentState extends State<_FloorWallsContent> {
   String? _selectedRoomId;
 
+  String get _floorPath =>
+      '/sites/${widget.siteId}/buildings/${widget.buildingId}/floors/${widget.floorId}';
+
+  /// Opens the add form on the hall being looked at, so an item added while
+  /// working through a hall is filed there without picking it again.
+  void _openAddItem([_RoomFilter? room]) {
+    final isRealHall = room != null && room.id != _RoomFilter.unassignedId;
+    context.push(
+      Uri(
+        path: '$_floorPath/add-item',
+        queryParameters: isRealHall ? {'hall': room.label} : null,
+      ).toString(),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final textTheme = Theme.of(context).textTheme;
+    final wording = widget.wording;
     final roomFilters = _roomFilters(widget.geometry, widget.walls);
     final selectedRoom = _selectedRoom(roomFilters);
     final visibleWalls = selectedRoom == null
@@ -204,8 +227,9 @@ class _FloorWallsContentState extends State<_FloorWallsContent> {
                     ),
                     const SizedBox(height: 2),
                     Text(
-                      '${selectedRoom?.label ?? 'All rooms'} · '
-                      '$doneCount/${visibleWalls.length} walls captured',
+                      '${selectedRoom?.label ?? 'All ${wording.hall}s'} · '
+                      '$doneCount/${visibleWalls.length} ${wording.items} '
+                      'captured',
                       style: textTheme.bodyMedium?.copyWith(
                         color: AppColors.onSurfaceMuted,
                       ),
@@ -213,16 +237,13 @@ class _FloorWallsContentState extends State<_FloorWallsContent> {
                   ],
                 ),
               ),
-              _AddWallButton(
-                onTap: () => context.push(
-                  '/sites/${widget.siteId}/buildings/${widget.buildingId}/floors/${widget.floorId}/add-wall',
-                ),
-              ),
+              _AddItemButton(onTap: () => _openAddItem(selectedRoom)),
             ],
           ),
         ),
         if (roomFilters.isNotEmpty)
           _RoomFilterBar(
+            heading: wording.hallHeading,
             rooms: roomFilters,
             selectedRoomId: selectedRoom!.id,
             onSelected: (roomId) => setState(() => _selectedRoomId = roomId),
@@ -231,11 +252,9 @@ class _FloorWallsContentState extends State<_FloorWallsContent> {
           child: widget.walls.isEmpty && !hasCanvasArtwork
               ? EmptyState(
                   icon: Icons.grid_view,
-                  message: 'No walls yet for this floor.',
-                  actionLabel: 'Add wall',
-                  onAction: () => context.push(
-                    '/sites/${widget.siteId}/buildings/${widget.buildingId}/floors/${widget.floorId}/add-wall',
-                  ),
+                  message: 'No ${wording.items} yet for this floor.',
+                  actionLabel: 'Add ${wording.item}',
+                  onAction: _openAddItem,
                 )
               : SingleChildScrollView(
                   padding: const EdgeInsets.fromLTRB(
@@ -259,8 +278,10 @@ class _FloorWallsContentState extends State<_FloorWallsContent> {
                           padding: const EdgeInsets.only(bottom: AppSpacing.md),
                           child: Text(
                             selectedRoom == null
-                                ? 'Canvas loaded · no mapped walls yet'
-                                : 'No walls in ${selectedRoom.label}',
+                                ? 'Canvas loaded · no mapped ${wording.items} '
+                                      'yet'
+                                : 'No ${wording.items} in '
+                                      '${selectedRoom.label}',
                             style: textTheme.bodyMedium?.copyWith(
                               color: AppColors.onSurfaceMuted,
                             ),
@@ -283,16 +304,8 @@ class _FloorWallsContentState extends State<_FloorWallsContent> {
     );
   }
 
-  void _openWallDetail(BuildContext context, WallEntity wall) {
-    final base =
-        '/sites/${widget.siteId}/buildings/${widget.buildingId}/floors/${widget.floorId}';
-    // Off-map (local_id) walls never enter grid-capture/sync-session —
-    // that pipeline requires a real, server-known wall id (see
-    // `UnassignedWallDetailPage`'s doc comment for why).
-    context.push(
-      wall.isLocal ? '$base/unassigned/${wall.id}' : '$base/walls/${wall.id}',
-    );
-  }
+  void _openWallDetail(BuildContext context, WallEntity wall) =>
+      context.push('$_floorPath/walls/${wall.id}');
 
   _RoomFilter? _selectedRoom(List<_RoomFilter> rooms) {
     if (rooms.isEmpty) return null;
@@ -410,11 +423,14 @@ class _RoomFilter {
 
 class _RoomFilterBar extends StatelessWidget {
   const _RoomFilterBar({
+    required this.heading,
     required this.rooms,
     required this.selectedRoomId,
     required this.onSelected,
   });
 
+  /// What this site calls a room: "Room" or "Hall".
+  final String heading;
   final List<_RoomFilter> rooms;
   final String selectedRoomId;
   final ValueChanged<String> onSelected;
@@ -432,7 +448,7 @@ class _RoomFilterBar extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text(
-            'Room',
+            heading,
             style: Theme.of(
               context,
             ).textTheme.labelLarge?.copyWith(color: AppColors.onSurfaceMuted),
@@ -461,8 +477,8 @@ class _RoomFilterBar extends StatelessWidget {
   }
 }
 
-class _AddWallButton extends StatelessWidget {
-  const _AddWallButton({required this.onTap});
+class _AddItemButton extends StatelessWidget {
+  const _AddItemButton({required this.onTap});
 
   final VoidCallback onTap;
 
@@ -559,11 +575,18 @@ class _WallLayoutDiagram extends StatelessWidget {
             CanvasLine(id: wall.id, color: wall.status.meta.color, line: line),
       ];
     } else {
+      // Only walls are edges of a room. A statue or a painting stays in the
+      // list below; drawing it as a stretch of wall would be a false map.
+      final edges = walls
+          .where((wall) => wall.objectType == ObjectType.wall)
+          .toList();
+      if (edges.isEmpty) return const SizedBox.shrink();
+
       canvasSize = _fallbackCanvasSize;
       displayHeight = _fallbackCanvasSize.height;
       final wallLines = CanvasLayout.wallsAroundRoom(
         _fallbackRoomRect,
-        walls.length,
+        edges.length,
       );
       shapes = [
         const CanvasRect(
@@ -572,10 +595,10 @@ class _WallLayoutDiagram extends StatelessWidget {
           rect: _fallbackRoomRect,
           selectable: false,
         ),
-        for (var i = 0; i < walls.length; i++)
+        for (var i = 0; i < edges.length; i++)
           CanvasLine(
-            id: walls[i].id,
-            color: walls[i].status.meta.color,
+            id: edges[i].id,
+            color: edges[i].status.meta.color,
             line: wallLines[i],
           ),
       ];

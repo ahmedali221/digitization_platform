@@ -1,9 +1,12 @@
 import 'package:hive_flutter/hive_flutter.dart';
 import 'package:uuid/uuid.dart';
 
+import '../../domain/entities/new_item_draft.dart';
+import '../../domain/entities/wall.dart';
 import '../../storage/hive_boxes.dart';
 import '../models/floor_package_record.dart';
 import '../models/id_mapping_record.dart';
+import '../models/local_item_stub.dart';
 import '../models/site_package_record.dart';
 import '../models/wall_status_record.dart';
 
@@ -11,6 +14,8 @@ import '../models/wall_status_record.dart';
 /// boxes — no HTTP, no entity mapping. [SiteMapper] turns these records
 /// into the app's domain entities.
 class SiteLocalDataSource {
+  static const _localIdLength = 8;
+
   final Uuid _uuid = const Uuid();
 
   Box<SitePackageRecord> get _sitesBox =>
@@ -25,11 +30,10 @@ class SiteLocalDataSource {
   Box<IdMappingRecord> get _idMappingsBox =>
       Hive.box<IdMappingRecord>(HiveBoxes.idMappings);
 
-  /// Untyped — a locally-added wall on an otherwise-mapped floor
-  /// (`AddWallPage`), keyed by a generated `local_` id. No server
-  /// counterpart or sync exists for these yet (same scope the fake
-  /// repository already had); full local-id resolution is Phase 5.
-  Box get _unassignedBox => Hive.box(HiveBoxes.unassigned);
+  /// Untyped: one [LocalItemStub] map per wall or object added on this
+  /// phone, keyed by its `local_` id. The box keeps the name it had when
+  /// these waited in the dashboard's unassigned queue.
+  Box get _localItemsBox => Hive.box(HiveBoxes.unassigned);
 
   List<SitePackageRecord> allSites() => _sitesBox.values.toList();
 
@@ -69,45 +73,56 @@ class SiteLocalDataSource {
 
   IdMappingRecord? getIdMapping(String localId) => _idMappingsBox.get(localId);
 
-  Future<String> addLocalWall({
+  Stream<void> watchIdMappings() => _idMappingsBox.watch();
+
+  /// Stores [draft] as a new item on [floorId] and returns its local id.
+  Future<String> addLocalItem({
     required String floorId,
-    required String title,
-    String notes = '',
-    String? roomLabel,
+    required NewItemDraft draft,
   }) async {
-    final localId = 'local_${_uuid.v4().substring(0, 8)}';
-    await _unassignedBox.put(localId, {
-      'floorId': floorId,
-      'title': title,
-      'notes': notes,
-      'createdAt': DateTime.now().toIso8601String(),
-      if (roomLabel != null && roomLabel.isNotEmpty) 'roomLabel': roomLabel,
-    });
+    final clientUuid = _uuid.v4();
+    final localId = _unusedLocalId(clientUuid);
+    await putLocalItem(
+      localId,
+      LocalItemStub.fromDraft(
+        floorId: floorId,
+        draft: draft,
+        clientUuid: clientUuid,
+        createdAt: DateTime.now(),
+      ),
+    );
     return localId;
   }
 
-  Map<String, Map<String, dynamic>> localWallsForFloor(String floorId) {
-    final result = <String, Map<String, dynamic>>{};
-    for (final key in _unassignedBox.keys) {
-      final value = (_unassignedBox.get(key) as Map).cast<String, dynamic>();
-      if (value['floorId'] == floorId) {
-        result[key as String] = value;
-      }
+  /// The local id is a short fragment because it names folders and shows up
+  /// in logs; short means two can collide, so a taken one is skipped.
+  String _unusedLocalId(String seedUuid) {
+    var candidate = seedUuid;
+    while (true) {
+      final localId =
+          '${WallEntity.localIdPrefix}'
+          '${candidate.replaceAll('-', '').substring(0, _localIdLength)}';
+      if (!_localItemsBox.containsKey(localId)) return localId;
+      candidate = _uuid.v4();
+    }
+  }
+
+  Future<void> putLocalItem(String localId, LocalItemStub stub) =>
+      _localItemsBox.put(localId, stub.toMap());
+
+  LocalItemStub? getLocalItem(String localId) {
+    final stored = _localItemsBox.get(localId);
+    return stored == null ? null : LocalItemStub.fromMap(stored as Map);
+  }
+
+  Map<String, LocalItemStub> localItemsForFloor(String floorId) {
+    final result = <String, LocalItemStub>{};
+    for (final key in _localItemsBox.keys) {
+      final stub = LocalItemStub.fromMap(_localItemsBox.get(key) as Map);
+      if (stub.floorId == floorId) result[key as String] = stub;
     }
     return result;
   }
 
-  /// Every locally-added wall stub across all floors, keyed by `local_id` —
-  /// the unassigned-walls feature's source of truth for "which off-map
-  /// walls exist," independent of which floor each one belongs to.
-  Map<String, Map<String, dynamic>> allLocalWalls() {
-    final result = <String, Map<String, dynamic>>{};
-    for (final key in _unassignedBox.keys) {
-      result[key as String] = (_unassignedBox.get(key) as Map)
-          .cast<String, dynamic>();
-    }
-    return result;
-  }
-
-  Stream<void> watchLocalWalls() => _unassignedBox.watch();
+  Stream<void> watchLocalItems() => _localItemsBox.watch();
 }

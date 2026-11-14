@@ -1,10 +1,11 @@
 import 'package:hive/hive.dart';
 
 import '../../../../core/data/models/hive_type_ids.dart';
+import '../../domain/entities/sync_item_kind.dart';
 
 part 'sync_queue_item_record.g.dart';
 
-/// One capture session's upload lifecycle — box `sync_queue`
+/// One capture's upload lifecycle — box `sync_queue`
 /// (FLUTTER_MOBILE_PLAN.md §3), keyed by [id]. [siteId] lets a future
 /// "delete cached site" flow check for unsynced sessions before allowing
 /// deletion.
@@ -21,7 +22,11 @@ class SyncQueueItemRecord extends HiveObject {
     this.attempts = 0,
     this.lastError,
     required this.createdAt,
+    this.kindName = defaultKindName,
   });
+
+  /// Every item queued before objects existed is a grid session.
+  static const defaultKindName = 'gridSession';
 
   @HiveField(0)
   final String id;
@@ -29,6 +34,8 @@ class SyncQueueItemRecord extends HiveObject {
   @HiveField(1)
   final String sessionId;
 
+  /// How this phone refers to the wall — for one created here, its `local_`
+  /// id, which `FieldItemRegistrar` turns into the server's at upload time.
   @HiveField(2)
   final String wallId;
 
@@ -53,4 +60,11 @@ class SyncQueueItemRecord extends HiveObject {
 
   @HiveField(9)
   final DateTime createdAt;
+
+  /// A [SyncItemKind] name.
+  @HiveField(10, defaultValue: defaultKindName)
+  final String kindName;
+
+  SyncItemKind get kind =>
+      SyncItemKind.values.asNameMap()[kindName] ?? SyncItemKind.gridSession;
 }

@@ -1,18 +1,47 @@
 import 'package:dio/dio.dart';
 
+import '../../../../core/domain/entities/object_type.dart';
 import '../../../../core/errors/dio_failure_mapper.dart';
 import '../../../../core/errors/failure.dart';
 import '../../../../core/network/api_endpoints.dart';
 import '../../../grid_capture/data/models/capture_session_record.dart';
+import '../../domain/entities/field_item_registration.dart';
 
-/// Dio calls for the three sync endpoints already live on the dashboard
-/// (`SyncController`/`CaptureController` — no dashboard changes needed for
-/// any of this). Photo binaries upload separately from the manifest
-/// registration, per the documented contract.
+/// Dio calls for creating a field item (`FieldItemController`) and for the
+/// three grid sync endpoints (`SyncController`/`CaptureController`). Photo
+/// binaries upload separately from the manifest registration, per the
+/// documented contract.
 class SyncRemoteDataSource {
   SyncRemoteDataSource(this._dio);
 
   final Dio _dio;
+
+  /// Creates a wall or object this phone made offline. Idempotent on the
+  /// payload's `client_uuid`: a retry returns the wall the first call made.
+  Future<FieldItemRegistration> createFieldItem({
+    required String floorId,
+    required Map<String, dynamic> payload,
+  }) async {
+    try {
+      final response = await _dio.post(
+        ApiEndpoints.floorItems(floorId),
+        data: payload,
+      );
+      final body = (response.data as Map).cast<String, dynamic>();
+      return FieldItemRegistration(
+        serverWallId: body['wall_id'].toString(),
+        createdAt:
+            DateTime.tryParse(body['created_at'] as String? ?? '') ??
+            DateTime.now(),
+        hallId: body['chamber_id']?.toString(),
+        hallName: body['chamber_name'] as String?,
+        intakeStatus: IntakeStatus.fromWire(body['intake_status'] as String?),
+        isArchived: body['is_archived'] as bool? ?? false,
+      );
+    } on DioException catch (e) {
+      throw AppException(mapDioException(e));
+    }
+  }
 
   /// Registers the grid + checksum manifest; returns the server-assigned
   /// session id used to confirm later.

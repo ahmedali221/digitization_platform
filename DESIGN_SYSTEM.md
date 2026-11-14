@@ -150,7 +150,7 @@ ones in that feature's `presentation/widgets/`.
 | `ErrorRetryView` | message + "Retry" — standard shape for any repository failure surfaced to UI |
 | `ConfirmDialog` | for destructive actions (delete cached site, discard session) |
 | `SectionHeader` | label + optional trailing action, used above list groups |
-| `SwipeableListTile` | base for sync queue / unassigned-wall list rows |
+| `SwipeableListTile` | base for sync queue list rows |
 
 ### 7.2 Feature components (representative — not exhaustive; extend per screen as built)
 

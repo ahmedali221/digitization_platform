@@ -9,6 +9,7 @@ import '../../../../core/domain/entities/site.dart';
 import '../../../../core/domain/repositories/site_repository.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../../../core/theme/app_spacing.dart';
+import '../../../../core/theme/object_type_meta.dart';
 import '../../../../core/theme/wall_status.dart';
 import '../../../../core/utils/canvas_layout.dart';
 import '../../../../core/utils/navigation_extensions.dart';
@@ -154,7 +155,9 @@ class _FloorsListContentState extends State<_FloorsListContent> {
             OverviewMetrics.subtitleBottomGap,
           ),
           child: Text(
-            '${building.floors.length} floors · ${building.doneCount}/${building.wallCount} walls captured',
+            '${building.floors.length} floors · '
+            '${building.doneCount}/${building.wallCount} '
+            '${SiteWording.of(site.kind).items} captured',
             style: textTheme.bodyMedium?.copyWith(
               color: AppColors.onSurfaceMuted,
             ),

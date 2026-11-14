@@ -1,6 +1,8 @@
 import 'package:equatable/equatable.dart';
 
 import '../../theme/wall_status.dart';
+import 'object_metadata.dart';
+import 'object_type.dart';
 
 /// One grid cell's captured shots, in capture order (`S1`, `S2`, ...).
 /// `shotPaths` holds real local file paths — both the real camera repository
@@ -52,6 +54,9 @@ class GridState extends Equatable {
   List<Object?> get props => [rows, cols, cells];
 }
 
+/// A wall, or any other record on a floor that is captured the same way: a
+/// painting, a statue, a stela. The class keeps its name because the server
+/// row it mirrors does, and every capture and sync path is keyed by its [id].
 class WallEntity extends Equatable {
   const WallEntity({
     required this.id,
@@ -62,8 +67,18 @@ class WallEntity extends Equatable {
     this.notes = '',
     this.grid,
     this.roomLabel,
+    this.hallId,
+    this.objectType = ObjectType.wall,
+    this.captureMode = CaptureMode.grid,
+    this.metadata = ObjectMetadata.empty,
+    this.intakeStatus = IntakeStatus.accepted,
+    this.capturedSides = const {},
+    this.serverId,
   });
 
+  /// How this phone refers to the record: the server's wall id, or, for one
+  /// created here, a `local_`-prefixed id that stays its id on this phone
+  /// even after the server has given it a real one (see [serverId]).
   final String id;
   final String floorId;
   final String name;
@@ -72,21 +87,43 @@ class WallEntity extends Equatable {
   final String lastCapture;
   final GridState? grid;
 
-  /// The room/level (e.g. "J") this wall was assigned to on `AddWallPage`,
-  /// for off-map walls only — real, server-mapped walls get their room
-  /// membership from the downloaded map geometry instead (see
-  /// `FloorWallsPage`'s `_roomFilters`).
+  /// The name of the chamber or hall this record is filed under. Rooms drawn
+  /// on the map claim their walls by geometry first; this groups everything
+  /// else (see `FloorWallsPage`'s `_roomFilters`).
   final String? roomLabel;
+
+  /// The server's id for that chamber, when it has one.
+  final String? hallId;
+
+  final ObjectType objectType;
+
+  /// Not always [ObjectType.captureMode]: a wall can be either, and the
+  /// dashboard can convert a record from one to the other.
+  final CaptureMode captureMode;
+  final ObjectMetadata metadata;
+  final IntakeStatus intakeStatus;
+
+  /// The sides the server already holds a photograph of, as of the last
+  /// downloaded package. This phone's own shots are not in here.
+  final Set<ObjectSide> capturedSides;
+
+  /// The server's wall id for a record created on this phone, once it has
+  /// been sent. Null before that, and for records that came from a package.
+  final String? serverId;
 
   /// Matches FLUTTER_MOBILE_PLAN.md §2/§4: the capture entry point is
   /// available at every status — label swaps, the action is never disabled.
   bool get hasGrid => grid != null;
 
-  /// An off-map wall added via `AddWallPage`/`SiteRepository.addWall`,
-  /// keyed by a `local_`-prefixed id (`SiteLocalDataSource.addLocalWall`)
-  /// rather than a real server-assigned wall id. These must never enter the
-  /// grid-capture/sync-session pipeline — see `unassigned_walls` feature.
-  bool get isLocal => id.startsWith('local_');
+  /// Created on this phone (`SiteRepository.addItem`).
+  bool get isLocal => id.startsWith(localIdPrefix);
+
+  /// Created on this phone and not yet known to the server.
+  bool get isOnlyOnThisPhone => isLocal && serverId == null;
+
+  bool get isAwaitingReview => intakeStatus == IntakeStatus.pending;
+
+  static const localIdPrefix = 'local_';
 
   WallEntity copyWith({
     String? name,
@@ -104,6 +141,14 @@ class WallEntity extends Equatable {
       status: status ?? this.status,
       lastCapture: lastCapture ?? this.lastCapture,
       grid: clearGrid ? null : (grid ?? this.grid),
+      roomLabel: roomLabel,
+      hallId: hallId,
+      objectType: objectType,
+      captureMode: captureMode,
+      metadata: metadata,
+      intakeStatus: intakeStatus,
+      capturedSides: capturedSides,
+      serverId: serverId,
     );
   }
 
@@ -117,5 +162,12 @@ class WallEntity extends Equatable {
     lastCapture,
     grid,
     roomLabel,
+    hallId,
+    objectType,
+    captureMode,
+    metadata,
+    intakeStatus,
+    capturedSides,
+    serverId,
   ];
 }

@@ -3,6 +3,8 @@ import 'dart:async';
 import '../../../features/site_sync/domain/services/site_download_service.dart';
 import '../../domain/entities/building.dart';
 import '../../domain/entities/floor.dart';
+import '../../domain/entities/hall.dart';
+import '../../domain/entities/new_item_draft.dart';
 import '../../domain/entities/site.dart';
 import '../../domain/entities/wall.dart';
 import '../../domain/repositories/site_repository.dart';
@@ -12,6 +14,7 @@ import '../../utils/relative_time.dart';
 import '../datasources/site_local_data_source.dart';
 import '../datasources/site_remote_data_source.dart';
 import '../mappers/site_mapper.dart';
+import '../models/local_item_stub.dart';
 import '../models/site_package_record.dart';
 import '../models/wall_status_record.dart';
 
@@ -33,7 +36,8 @@ class SiteRepositoryImpl implements SiteRepository {
        _mapper = mapper {
     _sitesSub = _local.watchSites().listen((_) => _emit());
     _wallStatusSub = _local.watchWallStatus().listen((_) => _emit());
-    _localWallsSub = _local.watchLocalWalls().listen((_) => _emit());
+    _localItemsSub = _local.watchLocalItems().listen((_) => _emit());
+    _idMappingsSub = _local.watchIdMappings().listen((_) => _emit());
   }
 
   final SiteLocalDataSource _local;
@@ -45,7 +49,8 @@ class SiteRepositoryImpl implements SiteRepository {
   final _controller = StreamController<List<SiteEntity>>.broadcast();
   late final StreamSubscription<void> _sitesSub;
   late final StreamSubscription<void> _wallStatusSub;
-  late final StreamSubscription<void> _localWallsSub;
+  late final StreamSubscription<void> _localItemsSub;
+  late final StreamSubscription<void> _idMappingsSub;
 
   /// Sites currently mid-download and their 0-100 progress. Deliberately
   /// in-memory only — an interrupted download just restarts, there is
@@ -106,6 +111,7 @@ class SiteRepositoryImpl implements SiteRepository {
         (existing ?? SitePackageRecord(siteId: summary.id, name: summary.name))
             .copyWith(
               name: summary.name,
+              kind: summary.kind,
               location: summary.location,
               latestVersion: summary.latestVersion,
               latestPublishedAt: summary.latestPublishedAt,
@@ -182,25 +188,8 @@ class SiteRepositoryImpl implements SiteRepository {
   }
 
   @override
-  void addWall(
-    String floorId, {
-    required String title,
-    String notes = '',
-    String? roomLabel,
-  }) {
-    // Local-only, same as the fake this replaces: a wall the operator adds
-    // on-site that isn't in the published map yet. No server counterpart
-    // or sync exists for these (full local-id resolution is Phase 5) — it
-    // just needs to persist and appear locally, which this does.
-    unawaited(
-      _local.addLocalWall(
-        floorId: floorId,
-        title: title,
-        notes: notes,
-        roomLabel: roomLabel,
-      ),
-    );
-  }
+  Future<String> addItem(String floorId, NewItemDraft draft) =>
+      _local.addLocalItem(floorId: floorId, draft: draft);
 
   List<SiteEntity> _mapAll() =>
       _local.allSites().map(_mapOne).toList()
@@ -225,35 +214,112 @@ class SiteRepositoryImpl implements SiteRepository {
       buildings: site.buildings
           .map(
             (building) => building.copyWithFloors(
-              building.floors.map((floor) => _withLocalWalls(floor)).toList(),
+              building.floors
+                  .map(
+                    (floor) => _withLocalItems(floor, record.bundlePublishedAt),
+                  )
+                  .toList(),
             ),
           )
           .toList(),
     );
   }
 
-  FloorEntity _withLocalWalls(FloorEntity floor) {
-    final localWalls = _local.localWallsForFloor(floor.id);
-    if (localWalls.isEmpty) return floor;
+  /// Folds the items added on this phone into [floor].
+  ///
+  /// Such an item keeps its `local_` id here for good: its photos, capture
+  /// record and queue entry are all keyed by it. Once the server has given
+  /// it a wall id and a bundle carries that wall, the two are one record —
+  /// shown once, under the local id, with the bundle's fields. And when a
+  /// bundle built after the item was sent does not carry it, the server has
+  /// archived it (rejected, or removed), so it is dropped here too.
+  FloorEntity _withLocalItems(FloorEntity floor, DateTime? bundlePublishedAt) {
+    final stubs = _local.localItemsForFloor(floor.id);
+    if (stubs.isEmpty) return floor;
 
     final wallStatus = _local.allWallStatus();
-    final added = localWalls.entries.map((entry) {
-      final data = entry.value;
-      final localRecord = wallStatus[entry.key];
-      return WallEntity(
-        id: entry.key,
-        floorId: floor.id,
-        name: data['title'] as String,
-        notes: data['notes'] as String? ?? '',
-        status: localRecord != null
-            ? WallStatus.values.byName(localRecord.status)
-            : WallStatus.notStarted,
-        lastCapture: formatRelativeTime(localRecord?.updatedAt),
-        roomLabel: data['roomLabel'] as String?,
-      );
-    });
+    final publishedById = {for (final wall in floor.walls) wall.id: wall};
+    final local = <WallEntity>[];
+    final absorbedServerIds = <String>{};
 
-    return floor.copyWithWalls([...floor.walls, ...added]);
+    for (final entry in stubs.entries) {
+      final mapping = _local.getIdMapping(entry.key);
+      final published = publishedById[mapping?.wallId];
+
+      final isGoneFromServer =
+          mapping != null &&
+          published == null &&
+          bundlePublishedAt != null &&
+          mapping.resolvedAt.isBefore(bundlePublishedAt);
+      if (isGoneFromServer) continue;
+
+      if (published != null) absorbedServerIds.add(published.id);
+      local.add(
+        _localItem(
+          localId: entry.key,
+          stub: entry.value,
+          floorId: floor.id,
+          statusRecord: wallStatus[entry.key],
+          serverId: mapping?.wallId,
+          published: published,
+        ),
+      );
+    }
+
+    return floor.copyWith(
+      walls: [
+        ...floor.walls.where((wall) => !absorbedServerIds.contains(wall.id)),
+        ...local,
+      ],
+      halls: _withLocalHalls(floor.halls, stubs.values),
+    );
+  }
+
+  WallEntity _localItem({
+    required String localId,
+    required LocalItemStub stub,
+    required String floorId,
+    required WallStatusRecord? statusRecord,
+    required String? serverId,
+    required WallEntity? published,
+  }) {
+    return WallEntity(
+      id: localId,
+      floorId: floorId,
+      name: published?.name ?? stub.name,
+      notes: published?.notes ?? stub.notes,
+      status: statusRecord != null
+          ? WallStatus.values.byName(statusRecord.status)
+          : published?.status ?? WallStatus.notStarted,
+      lastCapture: statusRecord != null
+          ? formatRelativeTime(statusRecord.updatedAt)
+          : published?.lastCapture ?? formatRelativeTime(null),
+      grid: published?.grid,
+      roomLabel: published?.roomLabel ?? stub.hallName,
+      hallId: published?.hallId ?? stub.hallId,
+      objectType: published?.objectType ?? stub.objectType,
+      captureMode: published?.captureMode ?? stub.captureMode,
+      metadata: published?.metadata ?? stub.metadata,
+      intakeStatus: published?.intakeStatus ?? stub.intakeStatus,
+      capturedSides: published?.capturedSides ?? const {},
+      serverId: serverId,
+    );
+  }
+
+  /// A hall an operator named on this phone is offered again for the next
+  /// item, without waiting for the server to create it.
+  List<HallEntity> _withLocalHalls(
+    List<HallEntity> published,
+    Iterable<LocalItemStub> stubs,
+  ) {
+    final knownNames = {for (final hall in published) hall.name.toLowerCase()};
+    final added = <HallEntity>[];
+    for (final stub in stubs) {
+      final hall = stub.hall;
+      if (hall == null || !knownNames.add(hall.name.toLowerCase())) continue;
+      added.add(hall);
+    }
+    return [...published, ...added];
   }
 
   void _emit() => _controller.add(_mapAll());
@@ -261,7 +327,8 @@ class SiteRepositoryImpl implements SiteRepository {
   Future<void> dispose() async {
     await _sitesSub.cancel();
     await _wallStatusSub.cancel();
-    await _localWallsSub.cancel();
+    await _localItemsSub.cancel();
+    await _idMappingsSub.cancel();
     await _controller.close();
   }
 }

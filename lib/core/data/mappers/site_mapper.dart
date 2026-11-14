@@ -1,5 +1,8 @@
 import '../../domain/entities/building.dart';
 import '../../domain/entities/floor.dart';
+import '../../domain/entities/hall.dart';
+import '../../domain/entities/object_metadata.dart';
+import '../../domain/entities/object_type.dart';
 import '../../domain/entities/site.dart';
 import '../../domain/entities/wall.dart';
 import '../../theme/wall_status.dart';
@@ -48,6 +51,7 @@ class SiteMapper {
       location: siteRecord.location ?? '',
       availability: availability,
       buildings: buildings,
+      kind: SiteKind.fromWire(siteRecord.kind),
       downloadProgress: downloadProgress,
       lastSynced: formatRelativeTime(siteRecord.downloadedAt),
       updateAvailable: updateAvailable,
@@ -109,11 +113,20 @@ class SiteMapper {
         ? rawWallStatusIndex.cast<String, dynamic>()
         : const <String, dynamic>{};
 
-    final walls = rooms
-        .expand((room) => (room['walls'] as List? ?? const []).cast<Map>())
+    // `items` lists every record on the floor; `rooms` only those the canvas
+    // draws, which leaves out a wall added after its room was drawn and any
+    // object. A bundle published before `items` existed has only `rooms`.
+    final items = (raw['items'] as List?)?.cast<Map>();
+    final entries =
+        items ??
+        rooms.expand(
+          (room) => (room['walls'] as List? ?? const []).cast<Map>(),
+        );
+
+    final walls = entries
         .map(
-          (wallJson) => _mapWall(
-            wallJson.cast<String, dynamic>(),
+          (entry) => _mapWall(
+            entry.cast<String, dynamic>(),
             floorRecord.floorId,
             wallStatusIndex,
             localWallStatus,
@@ -126,16 +139,46 @@ class SiteMapper {
       buildingId: buildingId,
       name: floorJson['name'] as String,
       walls: walls,
+      halls: _mapHalls(raw['chambers'] as List?, rooms),
     );
   }
 
+  /// The halls a new item can be filed under: the bundle's own list, or,
+  /// for a bundle that predates it, the chambers its drawn rooms name.
+  List<HallEntity> _mapHalls(List<dynamic>? chambers, List<Map> rooms) {
+    if (chambers != null) {
+      return [
+        for (final chamber in chambers.cast<Map>())
+          HallEntity(
+            id: chamber['id'].toString(),
+            name: chamber['name']?.toString() ?? '',
+          ),
+      ];
+    }
+
+    final byId = <String, HallEntity>{};
+    for (final room in rooms) {
+      final chamberId = room['chamber_id'];
+      final label = room['label']?.toString() ?? '';
+      if (chamberId == null || label.isEmpty) continue;
+      byId.putIfAbsent(
+        chamberId.toString(),
+        () => HallEntity(id: chamberId.toString(), name: label),
+      );
+    }
+    return byId.values.toList();
+  }
+
+  /// [entry] is one of the bundle's `items`, or, for an older bundle, one of
+  /// a room's `walls` — which carries only `wall_id`, `name` and `edge`, so
+  /// every typed field falls back to "a wall, captured as a grid".
   WallEntity _mapWall(
-    Map<String, dynamic> wallJson,
+    Map<String, dynamic> entry,
     String floorId,
     Map<String, dynamic> wallStatusIndex,
     Map<String, WallStatusRecord> localWallStatus,
   ) {
-    final wallId = wallJson['wall_id'].toString();
+    final wallId = entry['wall_id'].toString();
     final serverEntry = (wallStatusIndex[wallId] as Map?)
         ?.cast<String, dynamic>();
     final localRecord = localWallStatus[wallId];
@@ -156,18 +199,41 @@ class SiteMapper {
             ? DateTime.parse(serverLastCaptureAt)
             : null);
 
+    final objectType = ObjectType.fromWire(entry['object_type'] as String?);
+    final captureModeRaw =
+        entry['capture_mode'] as String? ??
+        serverEntry?['capture_mode'] as String?;
+
     return WallEntity(
       id: wallId,
       floorId: floorId,
       // Falls back to the edge when an older published bundle predates the
       // wall-name field (see SitePackageBuilder::buildRoomFromShape).
       name:
-          (wallJson['name'] as String?) ??
-          '${_capitalize(wallJson['edge'] as String? ?? 'Wall')} wall',
+          (entry['name'] as String?) ??
+          '${_capitalize(entry['edge'] as String? ?? 'Wall')} wall',
+      notes: entry['notes'] as String? ?? '',
       status: status,
       lastCapture: formatRelativeTime(lastCaptureAt),
       grid: _mapGrid(serverEntry),
+      roomLabel: entry['chamber_name'] as String?,
+      hallId: entry['chamber_id']?.toString(),
+      objectType: objectType,
+      captureMode: captureModeRaw == null
+          ? objectType.captureMode
+          : CaptureMode.fromWire(captureModeRaw),
+      metadata: ObjectMetadata.fromWire(entry['metadata'] as Map?),
+      intakeStatus: IntakeStatus.fromWire(entry['intake_status'] as String?),
+      capturedSides: _mapSides(serverEntry?['sides_captured'] as List?),
     );
+  }
+
+  Set<ObjectSide> _mapSides(List<dynamic>? raw) {
+    if (raw == null) return const {};
+    return raw
+        .map((side) => ObjectSide.fromWire(side as String?))
+        .nonNulls
+        .toSet();
   }
 
   /// Grid *dimensions* come from the server so grid-init can be skipped for

@@ -14,7 +14,4 @@ class FakeSyncQueueRepository implements SyncQueueRepository {
 
   @override
   void retry(String id) {}
-
-  @override
-  Future<void> discard(String id) async {}
 }

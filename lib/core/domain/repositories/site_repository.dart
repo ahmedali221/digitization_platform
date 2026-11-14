@@ -1,5 +1,6 @@
 import '../entities/building.dart';
 import '../entities/floor.dart';
+import '../entities/new_item_draft.dart';
 import '../entities/site.dart';
 import '../entities/wall.dart';
 
@@ -51,15 +52,8 @@ abstract class SiteRepository {
     WallEntity Function(WallEntity current) update,
   );
 
-  /// Creates a new wall on [floorId] with the given [title]/[notes] and
-  /// pushes the mutated tree to [watchSites]'s listeners. [roomLabel], when
-  /// given, assigns the wall to that room/level (e.g. "J") on the floor's
-  /// room filter — matching an existing room's label if one exists, or
-  /// forming a new one otherwise — instead of leaving it "Unassigned".
-  void addWall(
-    String floorId, {
-    required String title,
-    String notes = '',
-    String? roomLabel,
-  });
+  /// Adds a wall or object to [floorId] on this phone and returns its id,
+  /// once it is stored and visible to [watchSites]'s listeners. It can be
+  /// captured straight away; the server learns of it when its capture syncs.
+  Future<String> addItem(String floorId, NewItemDraft draft);
 }

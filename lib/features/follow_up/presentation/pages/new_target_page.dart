@@ -14,7 +14,7 @@ import '../cubit/new_target_cubit.dart';
 import '../cubit/new_target_state.dart';
 import '../widgets/new_target_details_form.dart';
 import '../widgets/new_target_photo_section.dart';
-import 'follow_up_camera_page.dart';
+import '../../../../core/camera/multi_shot_camera_page.dart';
 import 'shot_review_page.dart';
 import 'target_width_page.dart';
 
@@ -50,17 +50,24 @@ class _NewTargetView extends StatelessWidget {
     final folder = await cubit.shotsFolder();
 
     final shots = await navigator.push<List<String>>(
-      MaterialPageRoute(builder: (_) => FollowUpCameraPage(title: _title, folder: folder)),
+      MaterialPageRoute(
+        builder: (_) => MultiShotCameraPage(title: _title, folder: folder),
+      ),
     );
     if (shots == null || shots.isEmpty) return;
 
-    final chosen = await navigator.push<String>(MaterialPageRoute(builder: (_) => ShotReviewPage(shots: shots)));
+    final chosen = await navigator.push<String>(
+      MaterialPageRoute(builder: (_) => ShotReviewPage(shots: shots)),
+    );
     if (chosen != null) cubit.setPhoto(chosen);
   }
 
   /// Last, so a retake never costs a measurement. The width page saves the
   /// target, and stays open to try again if saving fails.
-  Future<void> _measureAndSave(BuildContext context, NewTargetState state) async {
+  Future<void> _measureAndSave(
+    BuildContext context,
+    NewTargetState state,
+  ) async {
     final cubit = context.read<NewTargetCubit>();
     final navigator = Navigator.of(context);
     final messenger = ScaffoldMessenger.of(context);
@@ -77,7 +84,11 @@ class _NewTargetView extends StatelessWidget {
     if (saved == null) return;
 
     messenger.showSnackBar(
-      const SnackBar(content: Text('Saved. It will be reviewed on the dashboard, then created in the studio.')),
+      const SnackBar(
+        content: Text(
+          'Saved. It will be reviewed on the dashboard, then created in the studio.',
+        ),
+      ),
     );
     navigator.pop(true);
   }
@@ -110,10 +121,15 @@ class _NewTargetView extends StatelessWidget {
                   Text(
                     'For a target this site has no profile for yet. Once it is approved on the dashboard, '
                     'the studio makes it a profile, with no video yet.',
-                    style: Theme.of(context).textTheme.bodySmall?.copyWith(color: AppColors.onSurfaceMuted),
+                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                      color: AppColors.onSurfaceMuted,
+                    ),
                   ),
                   const SizedBox(height: AppSpacing.lg),
-                  NewTargetPhotoSection(photoPath: state.photoPath, onTake: () => _photograph(context)),
+                  NewTargetPhotoSection(
+                    photoPath: state.photoPath,
+                    onTake: () => _photograph(context),
+                  ),
                   const SizedBox(height: AppSpacing.lg),
                   NewTargetDetailsForm(
                     details: state.details,

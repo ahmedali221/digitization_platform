@@ -135,7 +135,9 @@ class _GridInitForm extends StatelessWidget {
     }
 
     createGrid();
-    context.push(
+    // Replaces this screen: Back from the grid returns to the wall, not to
+    // choosing a grid that already exists.
+    context.pushReplacement(
       '/sites/$siteId/buildings/$buildingId/floors/$floorId/walls/$wallId/grid-capture',
     );
   }

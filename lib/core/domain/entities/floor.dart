@@ -1,6 +1,7 @@
 import 'package:equatable/equatable.dart';
 
 import '../../theme/wall_status.dart';
+import 'hall.dart';
 import 'wall.dart';
 
 /// A floor within a building. Its [walls] are shown only after the user has
@@ -11,12 +12,18 @@ class FloorEntity extends Equatable {
     required this.buildingId,
     required this.name,
     required this.walls,
+    this.halls = const [],
   });
 
   final String id;
   final String buildingId;
   final String name;
+
+  /// Every wall and object on the floor, whatever its type.
   final List<WallEntity> walls;
+
+  /// The chambers or halls a new item can be filed under.
+  final List<HallEntity> halls;
 
   WallStatus get aggregateStatus =>
       aggregateWallStatus(walls.map((w) => w.status).toList());
@@ -27,15 +34,16 @@ class FloorEntity extends Equatable {
       )
       .length;
 
-  FloorEntity copyWithWalls(List<WallEntity> walls) {
+  FloorEntity copyWith({List<WallEntity>? walls, List<HallEntity>? halls}) {
     return FloorEntity(
       id: id,
       buildingId: buildingId,
       name: name,
-      walls: walls,
+      walls: walls ?? this.walls,
+      halls: halls ?? this.halls,
     );
   }
 
   @override
-  List<Object?> get props => [id, buildingId, name, walls];
+  List<Object?> get props => [id, buildingId, name, walls, halls];
 }

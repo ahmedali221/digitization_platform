@@ -1,44 +1,39 @@
-import 'dart:io';
-
-import 'package:path/path.dart' as p;
-
 import '../../../../core/errors/failure.dart';
-import '../../../../core/storage/device_id_provider.dart';
-import '../../../../core/storage/directory_manager.dart';
-import '../../../../core/storage/gallery_backup_service.dart';
-import '../../../grid_capture/data/datasources/capture_session_local_data_source.dart';
 import '../../data/datasources/sync_queue_local_data_source.dart';
-import '../../data/datasources/sync_remote_data_source.dart';
 import '../../data/models/sync_queue_item_record.dart';
+import '../entities/sync_item_kind.dart';
+import 'capture_uploader.dart';
+import 'field_item_registrar.dart';
 
-/// Drains the sync queue: register the grid manifest, upload every photo,
-/// confirm — deleting the local backup copy only once confirm succeeds
-/// (Invariant 1). Network/5xx failures stay `queued` so the next drain
-/// (manual "Sync now" or the background task) retries automatically; a 422
-/// validation failure is terminal (`failed`) and needs the operator to fix
-/// the session before a manual retry, per the contract's documented
-/// guidance — never blind-retried.
+/// Drains the sync queue. For each item: make sure the server knows the
+/// wall (`FieldItemRegistrar`), hand the photos to the uploader for the
+/// item's kind, and delete the local backup copies only once that uploader
+/// reports the server has confirmed them (Invariant 1).
+///
+/// Network/5xx failures stay `queued` so the next drain (manual "Sync now"
+/// or the background task) retries automatically; a 422 validation failure
+/// is terminal (`failed`) and needs the operator to fix the capture before a
+/// manual retry, per the contract's documented guidance — never
+/// blind-retried.
 class SyncQueueRunner {
   SyncQueueRunner({
     required SyncQueueLocalDataSource queueLocal,
-    required CaptureSessionLocalDataSource sessionLocal,
-    required SyncRemoteDataSource remote,
-    required DeviceIdProvider deviceIdProvider,
-    required DirectoryManager directoryManager,
-    required GalleryBackupService galleryBackup,
+    required FieldItemRegistrar registrar,
+    required Map<SyncItemKind, CaptureUploader> uploaders,
   }) : _queueLocal = queueLocal,
-       _sessionLocal = sessionLocal,
-       _remote = remote,
-       _deviceIdProvider = deviceIdProvider,
-       _directoryManager = directoryManager,
-       _galleryBackup = galleryBackup;
+       _registrar = registrar,
+       _uploaders = uploaders;
+
+  /// Where the bar stands once the server knows the wall, before any photo.
+  static const _startedPercent = 5;
+  static const _rejectedMessage =
+      'This item was rejected on the dashboard, so its photos were not sent.';
+  static const _nothingToSendMessage =
+      'No local capture data found for this item.';
 
   final SyncQueueLocalDataSource _queueLocal;
-  final CaptureSessionLocalDataSource _sessionLocal;
-  final SyncRemoteDataSource _remote;
-  final DeviceIdProvider _deviceIdProvider;
-  final DirectoryManager _directoryManager;
-  final GalleryBackupService _galleryBackup;
+  final FieldItemRegistrar _registrar;
+  final Map<SyncItemKind, CaptureUploader> _uploaders;
 
   Future<void> drainAll() async {
     final pending = _queueLocal.all().where(
@@ -55,90 +50,66 @@ class SyncQueueRunner {
   }
 
   Future<void> _drainOne(SyncQueueItemRecord item) async {
-    if (item.wallId.startsWith('local_')) {
-      // Leftover from before this wall was routed through
-      // features/unassigned_walls (or a pre-fix build) — the server will
-      // always 422 this id, so fail it locally instead of hitting the
-      // network with a request that can never succeed.
-      item.status = 'failed';
-      item.lastError =
-          "This wall hasn't been linked to a site wall yet — tap Resolve "
-          'to choose its site so it can be reviewed on the dashboard.';
-      await _queueLocal.put(item);
+    final uploader = _uploaders[item.kind]!;
+    if (!uploader.hasCapture(item.wallId)) {
+      await _fail(item, _nothingToSendMessage);
       return;
     }
 
-    final session = _sessionLocal.get(item.wallId);
-    if (session == null) {
-      item.status = 'failed';
-      item.lastError = 'No local capture data found for this wall.';
-      await _queueLocal.put(item);
-      return;
-    }
-
-    item.status = 'uploading';
-    item.progress = 5;
+    item
+      ..status = 'uploading'
+      ..progress = _startedPercent;
     await _queueLocal.put(item);
 
     try {
-      final deviceId = await _deviceIdProvider.getOrCreateDeviceId();
-
-      final serverSessionId = await _remote.registerSession(
-        deviceId: deviceId,
-        siteId: item.siteId,
-        wallId: item.wallId,
-        session: session,
-      );
-      session.serverSessionId = serverSessionId;
-      await _sessionLocal.put(session);
-      item.progress = 20;
-      await _queueLocal.put(item);
-
-      final photos = [
-        for (final cell in session.cells)
-          for (final photo in cell.photos) (cell: cell, photo: photo),
-      ];
-      for (var i = 0; i < photos.length; i++) {
-        final entry = photos[i];
-        final image =
-            await _directoryManager.resolveExistingFile(entry.photo.file) ??
-            File(entry.photo.file);
-        await _remote.uploadCellPhoto(
-          wallId: item.wallId,
-          row: entry.cell.row,
-          col: entry.cell.col,
-          shot: entry.photo.shot,
-          openImageBytes: image.openRead,
-          imageLength: await image.length(),
-          fileName: p.basename(image.path),
-        );
-        item.progress = 20 + (((i + 1) / photos.length) * 70).round();
-        await _queueLocal.put(item);
+      final wall = await _registrar.serverWallFor(item.wallId);
+      if (wall.isArchived) {
+        await _fail(item, _rejectedMessage);
+        return;
       }
 
-      await _remote.confirmSession(serverSessionId);
-      item.status = 'confirmed';
-      item.progress = 100;
-      item.lastError = null;
+      await uploader.upload(
+        localWallId: item.wallId,
+        serverWallId: wall.serverWallId,
+        siteId: item.siteId,
+        onProgress: (fraction) => _reportProgress(item, fraction),
+      );
+
+      item
+        ..status = 'confirmed'
+        ..progress = 100
+        ..lastError = null;
       await _queueLocal.put(item);
 
-      await _directoryManager.deleteBackup(item.wallId);
-      // Best-effort — see GalleryBackupService's doc comment for why this
-      // has to happen on every confirm, not just be left for later cleanup.
-      await _galleryBackup.deleteWallBackup(
+      await uploader.deleteBackups(
+        localWallId: item.wallId,
         siteId: item.siteId,
-        wallId: item.wallId,
       );
     } on AppException catch (e) {
-      item.attempts += 1;
-      item.lastError = e.failure.message;
-      item.status = e.failure is ValidationFailure ? 'failed' : 'queued';
+      item
+        ..attempts += 1
+        ..lastError = e.failure.message
+        ..status = e.failure is ValidationFailure ? 'failed' : 'queued';
       await _queueLocal.put(item);
     } catch (e) {
-      item.attempts += 1;
-      item.lastError = e.toString();
-      item.status = 'queued';
+      item
+        ..attempts += 1
+        ..lastError = e.toString()
+        ..status = 'queued';
       await _queueLocal.put(item);
     }
+  }
+
+  void _reportProgress(SyncQueueItemRecord item, double fraction) {
+    item.progress =
+        _startedPercent + (fraction * (100 - _startedPercent)).round();
+    _queueLocal.put(item);
+  }
+
+  Future<void> _fail(SyncQueueItemRecord item, String message) {
+    item
+      ..status = 'failed'
+      ..lastError = message;
+    return _queueLocal.put(item);
   }
 }

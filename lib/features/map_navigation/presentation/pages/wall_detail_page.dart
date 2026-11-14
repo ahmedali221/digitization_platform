@@ -3,10 +3,12 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:get_it/get_it.dart';
 import 'package:go_router/go_router.dart';
 
+import '../../../../core/domain/entities/object_type.dart';
 import '../../../../core/domain/entities/wall.dart';
 import '../../../../core/domain/repositories/site_repository.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../../../core/theme/app_spacing.dart';
+import '../../../../core/theme/object_type_meta.dart';
 import '../../../../core/utils/navigation_extensions.dart';
 import '../../../../core/widgets/breadcrumb.dart';
 import '../../../../core/widgets/circle_icon_button.dart';
@@ -14,13 +16,17 @@ import '../../../../core/widgets/feedback_states.dart';
 import '../../../../core/widgets/primary_action_button.dart';
 import '../../../../core/widgets/status_chip.dart';
 import '../../../grid_capture/domain/repositories/grid_capture_repository.dart';
+import '../../../object_capture/domain/repositories/object_capture_repository.dart';
 import '../../../sync_queue/domain/repositories/sync_queue_repository.dart';
 import '../cubit/wall_detail_cubit.dart';
 import '../cubit/wall_detail_state.dart';
+import '../widgets/form_field_label.dart';
+import '../widgets/item_sync_chip.dart';
+import '../widgets/object_metadata_summary.dart';
 import '../widgets/overview_metrics.dart';
 
-/// Wall-level page: thumbnail placeholder + status + last capture + notes,
-/// and the single capture entry point (DESIGN_SYSTEM.md §7.2 — label swaps
+/// The page of one wall or object: what it is, where it stands, and the
+/// single capture entry point (DESIGN_SYSTEM.md §7.2 — label swaps
 /// "Start capture" / "Add more photos", the action itself is never disabled).
 class WallDetailPage extends StatelessWidget {
   const WallDetailPage({
@@ -42,6 +48,7 @@ class WallDetailPage extends StatelessWidget {
       create: (_) => WallDetailCubit(
         GetIt.instance<SiteRepository>(),
         GetIt.instance<GridCaptureRepository>(),
+        GetIt.instance<ObjectCaptureRepository>(),
         GetIt.instance<SyncQueueRepository>(),
         siteId,
         buildingId,
@@ -55,28 +62,19 @@ class WallDetailPage extends StatelessWidget {
               return switch (state) {
                 WallDetailLoading() => const LoadingIndicator(),
                 WallDetailNotFound() => ErrorRetryView(
-                  message: 'This wall could not be found.',
+                  message: 'This item could not be found.',
                   onRetry: () => context.safePop(),
                 ),
                 WallDetailError(:final message) => ErrorRetryView(
                   message: message,
                   onRetry: () => context.safePop(),
                 ),
-                WallDetailLoaded(
-                  :final site,
-                  :final buildingName,
-                  :final floorName,
-                  :final wall,
-                ) =>
-                  _WallDetailContent(
-                    siteId: siteId,
-                    siteName: site.name,
-                    buildingId: buildingId,
-                    buildingName: buildingName,
-                    floorId: floorId,
-                    floorName: floorName,
-                    wall: wall,
-                  ),
+                WallDetailLoaded() => _WallDetailContent(
+                  siteId: siteId,
+                  buildingId: buildingId,
+                  floorId: floorId,
+                  state: state,
+                ),
               };
             },
           ),
@@ -89,74 +87,30 @@ class WallDetailPage extends StatelessWidget {
 class _WallDetailContent extends StatelessWidget {
   const _WallDetailContent({
     required this.siteId,
-    required this.siteName,
     required this.buildingId,
-    required this.buildingName,
     required this.floorId,
-    required this.floorName,
-    required this.wall,
+    required this.state,
   });
 
   final String siteId;
-  final String siteName;
   final String buildingId;
-  final String buildingName;
   final String floorId;
-  final String floorName;
-  final WallEntity wall;
+  final WallDetailLoaded state;
+
+  String get _floorPath =>
+      '/sites/$siteId/buildings/$buildingId/floors/$floorId';
 
   @override
   Widget build(BuildContext context) {
-    final textTheme = Theme.of(context).textTheme;
+    final wall = state.wall;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Padding(
-          padding: const EdgeInsets.fromLTRB(
-            AppSpacing.md,
-            AppSpacing.lg,
-            AppSpacing.md,
-            AppSpacing.sm,
-          ),
-          child: Row(
-            children: [
-              CircleIconButton(
-                icon: Icons.arrow_back,
-                onTap: () => context.safePop(),
-                visualDiameter: 40,
-                iconSize: 22,
-                color: AppColors.textPrimary,
-              ),
-              const SizedBox(width: AppSpacing.sm),
-              Expanded(
-                child: Breadcrumb(
-                  items: [
-                    BreadcrumbItem(
-                      label: 'Sites',
-                      onTap: () => context.go('/sites'),
-                    ),
-                    BreadcrumbItem(
-                      label: siteName,
-                      onTap: () => context.go('/sites/$siteId/buildings'),
-                    ),
-                    BreadcrumbItem(
-                      label: buildingName,
-                      onTap: () => context.go(
-                        '/sites/$siteId/buildings/$buildingId/floors',
-                      ),
-                    ),
-                    BreadcrumbItem(
-                      label: floorName,
-                      onTap: () => context.go(
-                        '/sites/$siteId/buildings/$buildingId/floors/$floorId',
-                      ),
-                    ),
-                    BreadcrumbItem(label: wall.name),
-                  ],
-                ),
-              ),
-            ],
-          ),
+        _WallBreadcrumb(
+          siteId: siteId,
+          buildingId: buildingId,
+          floorPath: _floorPath,
+          state: state,
         ),
         Expanded(
           child: SingleChildScrollView(
@@ -169,72 +123,32 @@ class _WallDetailContent extends StatelessWidget {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(
-                  wall.name,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: textTheme.titleLarge?.copyWith(fontSize: 20),
-                ),
+                Text(wall.name, style: Theme.of(context).textTheme.titleLarge),
                 const SizedBox(height: AppSpacing.md),
-                Row(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Container(
-                      width: 56,
-                      height: 56,
-                      decoration: BoxDecoration(
-                        color: AppColors.outlineSubtle,
-                        borderRadius: BorderRadius.circular(10),
-                      ),
-                      child: const Icon(
-                        Icons.image,
-                        size: 26,
-                        color: AppColors.iconMuted,
-                      ),
-                    ),
-                    const SizedBox(width: AppSpacing.md),
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          StatusChip(status: wall.status),
-                          const SizedBox(height: 6),
-                          Text(
-                            'Last capture: ${wall.lastCapture}',
-                            style: textTheme.bodyMedium?.copyWith(
-                              fontSize: 13,
-                              color: AppColors.onSurfaceMuted,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ],
-                ),
+                _WallSummary(wall: wall),
+                if (!wall.metadata.isEmpty) ...[
+                  const SizedBox(height: AppSpacing.lg),
+                  ObjectMetadataSummary(metadata: wall.metadata),
+                ],
                 if (wall.notes.isNotEmpty) ...[
                   const SizedBox(height: AppSpacing.lg),
-                  Text(
-                    'NOTES',
-                    style: textTheme.labelSmall?.copyWith(
-                      color: AppColors.onSurfaceMuted,
-                      letterSpacing: 0.5,
-                    ),
-                  ),
+                  const FormFieldLabel('Notes'),
                   const SizedBox(height: AppSpacing.sm),
                   Text(
                     wall.notes,
-                    style: textTheme.bodyMedium?.copyWith(
+                    style: Theme.of(context).textTheme.bodyMedium?.copyWith(
                       color: AppColors.textPrimary,
                     ),
                   ),
                 ],
                 const SizedBox(height: AppSpacing.xl),
                 PrimaryActionButton(
-                  label: wall.hasGrid ? 'Add more photos' : 'Start capture',
+                  label: state.hasStartedCapture
+                      ? 'Add more photos'
+                      : 'Start capture',
                   onTap: () => _onCapture(context),
                 ),
-                if ((wall.grid?.filledCount ?? 0) > 0) ...[
+                if (state.hasLocalPhotos) ...[
                   const SizedBox(height: AppSpacing.sm),
                   SecondaryActionButton(
                     label: 'Upload to dashboard',
@@ -251,9 +165,13 @@ class _WallDetailContent extends StatelessWidget {
   }
 
   void _onCapture(BuildContext context) {
-    final base =
-        '/sites/$siteId/buildings/$buildingId/floors/$floorId/walls/${wall.id}';
-    context.push(wall.hasGrid ? '$base/grid-capture' : '$base/grid-init');
+    final wall = state.wall;
+    final base = '$_floorPath/walls/${wall.id}';
+    final segment = switch (wall.captureMode) {
+      CaptureMode.loose => 'object-capture',
+      CaptureMode.grid => wall.hasGrid ? 'grid-capture' : 'grid-init',
+    };
+    context.push('$base/$segment');
   }
 
   Future<void> _onUpload(BuildContext context) async {
@@ -275,9 +193,7 @@ class _WallDetailContent extends StatelessWidget {
         builder: (dialogContext) => AlertDialog(
           icon: const Icon(Icons.check_circle, color: AppColors.seed, size: 40),
           title: const Text('Upload complete'),
-          content: const Text(
-            "This wall's photos were uploaded to the dashboard.",
-          ),
+          content: const Text('Its photos were uploaded to the dashboard.'),
           actions: [
             TextButton(
               onPressed: () => Navigator.of(dialogContext).pop(),
@@ -294,5 +210,134 @@ class _WallDetailContent extends StatelessWidget {
         ),
       );
     }
+  }
+}
+
+class _WallBreadcrumb extends StatelessWidget {
+  const _WallBreadcrumb({
+    required this.siteId,
+    required this.buildingId,
+    required this.floorPath,
+    required this.state,
+  });
+
+  static const double _backButtonDiameter = 40;
+  static const double _backIconSize = 22;
+
+  final String siteId;
+  final String buildingId;
+  final String floorPath;
+  final WallDetailLoaded state;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(
+        AppSpacing.md,
+        AppSpacing.lg,
+        AppSpacing.md,
+        AppSpacing.sm,
+      ),
+      child: Row(
+        children: [
+          CircleIconButton(
+            icon: Icons.arrow_back,
+            onTap: () => context.safePop(),
+            visualDiameter: _backButtonDiameter,
+            iconSize: _backIconSize,
+            color: AppColors.textPrimary,
+          ),
+          const SizedBox(width: AppSpacing.sm),
+          Expanded(
+            child: Breadcrumb(
+              items: [
+                BreadcrumbItem(
+                  label: 'Sites',
+                  onTap: () => context.go('/sites'),
+                ),
+                BreadcrumbItem(
+                  label: state.site.name,
+                  onTap: () => context.go('/sites/$siteId/buildings'),
+                ),
+                BreadcrumbItem(
+                  label: state.buildingName,
+                  onTap: () =>
+                      context.go('/sites/$siteId/buildings/$buildingId/floors'),
+                ),
+                BreadcrumbItem(
+                  label: state.floorName,
+                  onTap: () => context.go(floorPath),
+                ),
+                BreadcrumbItem(label: state.wall.name),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// What the record is and where it stands: its type, its capture status,
+/// when it was last photographed, and — for one added on this phone or
+/// waiting for review — that too.
+class _WallSummary extends StatelessWidget {
+  const _WallSummary({required this.wall});
+
+  static const double _emblemExtent = 56;
+  static const double _emblemIconSize = 26;
+
+  final WallEntity wall;
+
+  @override
+  Widget build(BuildContext context) {
+    final textTheme = Theme.of(context).textTheme;
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Container(
+          width: _emblemExtent,
+          height: _emblemExtent,
+          decoration: BoxDecoration(
+            color: AppColors.outlineSubtle,
+            borderRadius: BorderRadius.circular(AppRadius.card),
+          ),
+          child: Icon(
+            wall.objectType.meta.icon,
+            size: _emblemIconSize,
+            color: AppColors.iconMuted,
+          ),
+        ),
+        const SizedBox(width: AppSpacing.md),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Wrap(
+                spacing: AppSpacing.sm,
+                runSpacing: AppSpacing.xs,
+                crossAxisAlignment: WrapCrossAlignment.center,
+                children: [
+                  StatusChip(status: wall.status),
+                  ItemSyncChip(wall: wall),
+                ],
+              ),
+              const SizedBox(height: AppSpacing.sm),
+              Text(
+                [
+                  wall.objectType.meta.label,
+                  wall.roomLabel,
+                  'Last capture: ${wall.lastCapture}',
+                ].nonNulls.join(' · '),
+                style: textTheme.bodyMedium?.copyWith(
+                  color: AppColors.onSurfaceMuted,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ],
+    );
   }
 }

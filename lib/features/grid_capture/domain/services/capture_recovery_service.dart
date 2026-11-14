@@ -5,6 +5,7 @@ import 'package:path/path.dart' as p;
 
 import '../../../../core/storage/directory_manager.dart';
 import '../../../../core/storage/gallery_backup_service.dart';
+import '../../../sync_queue/domain/entities/sync_item_kind.dart';
 import '../../../sync_queue/domain/repositories/sync_enqueuer.dart';
 import '../../data/datasources/capture_session_local_data_source.dart';
 import '../../data/models/capture_session_record.dart';
@@ -72,7 +73,9 @@ class CaptureRecoveryService {
 
       final byCell = <(int, int), List<GalleryBackupEntry>>{};
       for (final photo in photos) {
-        byCell.putIfAbsent((photo.info.row, photo.info.col), () => []).add(photo);
+        byCell
+            .putIfAbsent((photo.info.row, photo.info.col), () => [])
+            .add(photo);
       }
 
       final sessionDir = await _directoryManager.sessionDir(wallId);
@@ -80,7 +83,8 @@ class CaptureRecoveryService {
       for (var row = 0; row <= maxRow; row++) {
         for (var col = 0; col <= maxCol; col++) {
           final photoRecords = <CapturePhotoRecord>[];
-          for (final photo in byCell[(row, col)] ?? const <GalleryBackupEntry>[]) {
+          for (final photo
+              in byCell[(row, col)] ?? const <GalleryBackupEntry>[]) {
             final bytes = await photo.asset.originBytes;
             if (bytes == null) continue;
             final targetPath = p.join(
@@ -122,10 +126,11 @@ class CaptureRecoveryService {
           completedAt: DateTime.now(),
         ),
       );
-      await _syncEnqueuer.enqueueSession(
+      await _syncEnqueuer.enqueueCapture(
         wallId: wallId,
         siteId: siteId,
         displayName: wallId,
+        kind: SyncItemKind.gridSession,
       );
       return true;
     } catch (_) {

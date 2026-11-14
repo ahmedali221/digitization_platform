@@ -13,6 +13,7 @@ class SiteSummary {
     required this.latestVersion,
     required this.latestStatus,
     required this.latestPublishedAt,
+    this.kind,
   });
 
   factory SiteSummary.fromJson(Map<String, dynamic> json) {
@@ -20,6 +21,7 @@ class SiteSummary {
     return SiteSummary(
       id: json['id'].toString(),
       name: json['name'] as String,
+      kind: json['kind'] as String?,
       location: json['location'] as String?,
       latestVersion: latestPackage?['version'] as int?,
       latestStatus: latestPackage?['status'] as String?,
@@ -31,6 +33,9 @@ class SiteSummary {
 
   final String id;
   final String name;
+
+  /// `site` or `museum`; absent from a server that predates museums.
+  final String? kind;
   final String? location;
   final int? latestVersion;
   final String? latestStatus;

@@ -1,5 +1,6 @@
 import ARKit
 import AVFoundation
+import CoreMotion
 import Flutter
 import MediaPlayer
 import UIKit
@@ -25,6 +26,8 @@ import UIKit
   private let channelName = "nilelens/capture_button"
   private let lensInfoChannelName = "nilelens/lens_info"
   private let arMeasureChannelName = "nilelens/ar_measure"
+  private let deviceMotionChannelName = "nilelens/device_motion"
+  private let deviceMotionStreamHandler = DeviceMotionStreamHandler()
   private var methodChannel: FlutterMethodChannel?
 
   private var captureButtonArmed = false
@@ -53,6 +56,11 @@ import UIKit
         result(nil)
       }
       methodChannel = channel
+
+      FlutterEventChannel(
+        name: deviceMotionChannelName,
+        binaryMessenger: controller.binaryMessenger
+      ).setStreamHandler(deviceMotionStreamHandler)
 
       let lensInfoChannel = FlutterMethodChannel(
         name: lensInfoChannelName,

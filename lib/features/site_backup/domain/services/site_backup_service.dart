@@ -3,13 +3,14 @@ import 'dart:io';
 import 'package:archive/archive_io.dart';
 import 'package:path/path.dart' as p;
 
+import '../../../../core/domain/entities/object_type.dart';
 import '../../../../core/domain/entities/site.dart';
 import '../../../../core/domain/entities/wall.dart';
 import '../../../../core/domain/repositories/site_repository.dart';
 import '../../../../core/storage/directory_manager.dart';
 import '../../../../core/storage/public_downloads_channel.dart';
 import '../../../grid_capture/domain/repositories/grid_capture_repository.dart';
-import '../../../unassigned_walls/domain/repositories/unassigned_wall_repository.dart';
+import '../../../object_capture/domain/repositories/object_capture_repository.dart';
 
 /// One captured photo destined for the backup zip: [archivePath] mirrors the
 /// site's building/floor/wall structure; [sourcePath] is where the shot
@@ -22,25 +23,22 @@ typedef _BackupShot = ({String archivePath, String sourcePath});
 /// sandbox. Read-only over the same repositories the capture UI uses; never
 /// mutates capture state.
 ///
-/// Walls still awaiting floor/room assignment (`unassigned_walls`) aren't
-/// part of that hierarchy yet, so their photos land under a top-level
-/// `Unassigned/{wall title}/` folder instead.
+/// A wall or object added on this phone sits in that hierarchy like any
+/// other, so its photos are filed under its own floor too.
 class SiteBackupService {
   SiteBackupService({
     required SiteRepository siteRepository,
     required GridCaptureRepository gridCaptureRepository,
-    required UnassignedWallRepository unassignedWallRepository,
+    required ObjectCaptureRepository objectCaptureRepository,
     required DirectoryManager directoryManager,
   }) : _siteRepository = siteRepository,
        _gridCaptureRepository = gridCaptureRepository,
-       _unassignedWallRepository = unassignedWallRepository,
+       _objectCaptureRepository = objectCaptureRepository,
        _directoryManager = directoryManager;
-
-  static const _unassignedFolderName = 'Unassigned';
 
   final SiteRepository _siteRepository;
   final GridCaptureRepository _gridCaptureRepository;
-  final UnassignedWallRepository _unassignedWallRepository;
+  final ObjectCaptureRepository _objectCaptureRepository;
   final DirectoryManager _directoryManager;
 
   /// Builds the zip and returns its path. [onProgress] reports shots added
@@ -55,7 +53,7 @@ class SiteBackupService {
       throw StateError('Site not found: $siteId');
     }
 
-    final shots = await _collectShots(site);
+    final shots = _collectShots(site);
     if (shots.isEmpty) {
       throw StateError('No captured photos to back up yet.');
     }
@@ -103,62 +101,42 @@ class SiteBackupService {
     }
   }
 
-  Future<List<_BackupShot>> _collectShots(SiteEntity site) async {
+  List<_BackupShot> _collectShots(SiteEntity site) {
     final shots = <_BackupShot>[];
 
     for (final building in site.buildings) {
       for (final floor in building.floors) {
         for (final wall in floor.walls) {
-          final captured = _gridCaptureRepository.getWall(floor.id, wall.id);
-          _addWallShots(
-            shots,
-            grid: captured?.grid,
-            folder: p.posix.joinAll([
-              _sanitize(site.name),
-              _sanitize(building.name),
-              _sanitize(floor.name),
-              _sanitize(wall.name),
-            ]),
-          );
+          final folder = p.posix.joinAll([
+            _sanitize(site.name),
+            _sanitize(building.name),
+            _sanitize(floor.name),
+            _sanitize(wall.name),
+          ]);
+          for (final path in _photoPaths(floor.id, wall)) {
+            shots.add((
+              archivePath: p.posix.join(folder, p.basename(path)),
+              sourcePath: path,
+            ));
+          }
         }
       }
-    }
-
-    final unassignedWalls = await _unassignedWallRepository
-        .watchUnassignedWalls()
-        .first;
-    for (final wall in unassignedWalls.where((w) => w.siteId == site.id)) {
-      final captured = _gridCaptureRepository.getWall(
-        wall.floorId,
-        wall.localId,
-      );
-      _addWallShots(
-        shots,
-        grid: captured?.grid,
-        folder: p.posix.joinAll([
-          _sanitize(site.name),
-          _unassignedFolderName,
-          _sanitize(wall.title.isEmpty ? wall.localId : wall.title),
-        ]),
-      );
     }
 
     return shots;
   }
 
-  void _addWallShots(
-    List<_BackupShot> shots, {
-    required GridState? grid,
-    required String folder,
-  }) {
-    if (grid == null) return;
-    for (final cell in grid.cells) {
-      for (final path in cell.shotPaths) {
-        shots.add((
-          archivePath: p.posix.join(folder, p.basename(path)),
-          sourcePath: path,
-        ));
-      }
+  /// Every photo this phone holds of [wall], whichever way it is captured.
+  Iterable<String> _photoPaths(String floorId, WallEntity wall) {
+    switch (wall.captureMode) {
+      case CaptureMode.grid:
+        final grid = _gridCaptureRepository.getWall(floorId, wall.id)?.grid;
+        return grid?.cells.expand((cell) => cell.shotPaths) ?? const [];
+      case CaptureMode.loose:
+        return _objectCaptureRepository
+            .getCapture(wall.id)
+            .photos
+            .map((photo) => photo.path);
     }
   }
 

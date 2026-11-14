@@ -19,7 +19,7 @@ import '../cubit/follow_up_grid_cubit.dart';
 import '../widgets/labelled_photo.dart';
 import '../widgets/outlined_wall_picture.dart';
 import 'crop_photo_page.dart';
-import 'follow_up_camera_page.dart';
+import '../../../../core/camera/multi_shot_camera_page.dart';
 import 'follow_up_grid_page.dart';
 import 'shot_review_page.dart';
 
@@ -28,7 +28,11 @@ import 'shot_review_page.dart';
 /// too long for one sharp shot, which the dashboard stitches. Once one is taken,
 /// it shows beside the old close-up, labelled, with what became of it.
 class AnnotationTaskPage extends StatefulWidget {
-  const AnnotationTaskPage({super.key, required this.package, required this.annotation});
+  const AnnotationTaskPage({
+    super.key,
+    required this.package,
+    required this.annotation,
+  });
 
   final FollowUpPackage package;
   final FollowUpAnnotation annotation;
@@ -53,8 +57,12 @@ class _AnnotationTaskPageState extends State<AnnotationTaskPage> {
     final annotation = widget.annotation;
     final siteId = widget.package.siteId;
     return (
-      picture: annotation.picture == null ? null : await _repository.filePath(siteId, annotation.picture!.key),
-      closeup: annotation.closeupKey == null ? null : await _repository.filePath(siteId, annotation.closeupKey!),
+      picture: annotation.picture == null
+          ? null
+          : await _repository.filePath(siteId, annotation.picture!.key),
+      closeup: annotation.closeupKey == null
+          ? null
+          : await _repository.filePath(siteId, annotation.closeupKey!),
     );
   }
 
@@ -66,7 +74,12 @@ class _AnnotationTaskPageState extends State<AnnotationTaskPage> {
 
     try {
       final shots = await navigator.push<List<String>>(
-        MaterialPageRoute(builder: (_) => FollowUpCameraPage(title: widget.annotation.referenceCode, folder: folder)),
+        MaterialPageRoute(
+          builder: (_) => MultiShotCameraPage(
+            title: widget.annotation.referenceCode,
+            folder: folder,
+          ),
+        ),
       );
       if (shots == null || shots.isEmpty) return;
 
@@ -79,19 +92,28 @@ class _AnnotationTaskPageState extends State<AnnotationTaskPage> {
         MaterialPageRoute(
           builder: (_) => CropPhotoPage(
             photoPath: chosen,
-            onSave: (box) => _saveCrop(chosen, p.join(folder, 'cropped.jpg'), box),
+            onSave: (box) =>
+                _saveCrop(chosen, p.join(folder, 'cropped.jpg'), box),
           ),
         ),
       );
       if (saved ?? false) {
-        messenger.showSnackBar(const SnackBar(content: Text('Saved. It will be sent when there is a connection.')));
+        messenger.showSnackBar(
+          const SnackBar(
+            content: Text('Saved. It will be sent when there is a connection.'),
+          ),
+        );
       }
     } finally {
       await _repository.deleteShotsFolder(folder);
     }
   }
 
-  Future<void> _saveCrop(String sourcePath, String croppedPath, CropBox box) async {
+  Future<void> _saveCrop(
+    String sourcePath,
+    String croppedPath,
+    CropBox box,
+  ) async {
     await compute(
       cropPhoto,
       CropRequest(
@@ -126,20 +148,25 @@ class _AnnotationTaskPageState extends State<AnnotationTaskPage> {
         ),
       );
       if (queued ?? false) {
-        messenger.showSnackBar(const SnackBar(content: Text('Saved. It will be sent when there is a connection.')));
+        messenger.showSnackBar(
+          const SnackBar(
+            content: Text('Saved. It will be sent when there is a connection.'),
+          ),
+        );
       }
     } finally {
       await _repository.deleteShotsFolder(folder);
     }
   }
 
-  Future<void> _queueGrid(FollowUpGridState grid) => _repository.queueAnnotationGrid(
-    package: widget.package,
-    annotation: widget.annotation,
-    rows: grid.rows,
-    cols: grid.cols,
-    photos: grid.photos,
-  );
+  Future<void> _queueGrid(FollowUpGridState grid) =>
+      _repository.queueAnnotationGrid(
+        package: widget.package,
+        annotation: widget.annotation,
+        rows: grid.rows,
+        cols: grid.cols,
+        photos: grid.photos,
+      );
 
   /// Can't wait in a queue: someone is at the wall deciding whether to retake it.
   Future<void> _decide(FollowUpUploadRecord upload, {required bool use}) async {
@@ -149,7 +176,11 @@ class _AnnotationTaskPageState extends State<AnnotationTaskPage> {
       await _repository.decideGrid(upload, use: use);
     } on AppException catch (error) {
       messenger.showSnackBar(
-        SnackBar(content: Text('That needs a connection, and did not go through: ${error.failure.message}')),
+        SnackBar(
+          content: Text(
+            'That needs a connection, and did not go through: ${error.failure.message}',
+          ),
+        ),
       );
     } finally {
       if (mounted) setState(() => _working = false);
@@ -172,77 +203,101 @@ class _AnnotationTaskPageState extends State<AnnotationTaskPage> {
             return ListenableBuilder(
               listenable: _repository.uploadsChanged,
               builder: (context, _) {
-            // The newest is the one in use: annotations apply by themselves.
-            final newPhotos = newPhotosOf(
-              widget.package,
-              _repository.uploads(widget.package.siteId),
-              kind: FollowUpUploadRecord.kindAnnotation,
-              itemKey: annotation.id.toString(),
-            );
-            return RefreshIndicator(
-              onRefresh: _repository.sync,
-              child: ListView(
-              padding: const EdgeInsets.all(AppSpacing.lg),
-              children: [
-                Text(annotation.wall.name, style: textTheme.titleMedium),
-                if (annotation.wall.location.isNotEmpty)
-                  Text(annotation.wall.location, style: textTheme.bodySmall?.copyWith(color: AppColors.onSurfaceMuted)),
-                const SizedBox(height: AppSpacing.md),
-                if (annotation.picture != null && paths.picture != null) ...[
-                  Text('Where it is on the wall', style: textTheme.titleSmall),
-                  const SizedBox(height: AppSpacing.xs),
-                  OutlinedWallPicture(
-                    path: paths.picture!,
-                    picture: annotation.picture!,
-                    polygon: annotation.polygon,
+                // The newest is the one in use: annotations apply by themselves.
+                final newPhotos = newPhotosOf(
+                  widget.package,
+                  _repository.uploads(widget.package.siteId),
+                  kind: FollowUpUploadRecord.kindAnnotation,
+                  itemKey: annotation.id.toString(),
+                );
+                return RefreshIndicator(
+                  onRefresh: _repository.sync,
+                  child: ListView(
+                    padding: const EdgeInsets.all(AppSpacing.lg),
+                    children: [
+                      Text(annotation.wall.name, style: textTheme.titleMedium),
+                      if (annotation.wall.location.isNotEmpty)
+                        Text(
+                          annotation.wall.location,
+                          style: textTheme.bodySmall?.copyWith(
+                            color: AppColors.onSurfaceMuted,
+                          ),
+                        ),
+                      const SizedBox(height: AppSpacing.md),
+                      if (annotation.picture != null &&
+                          paths.picture != null) ...[
+                        Text(
+                          'Where it is on the wall',
+                          style: textTheme.titleSmall,
+                        ),
+                        const SizedBox(height: AppSpacing.xs),
+                        OutlinedWallPicture(
+                          path: paths.picture!,
+                          picture: annotation.picture!,
+                          polygon: annotation.polygon,
+                        ),
+                      ],
+                      if (paths.closeup != null) ...[
+                        const SizedBox(height: AppSpacing.lg),
+                        OldPhoto(
+                          path: paths.closeup!,
+                          caption: 'What the wall picture shows',
+                        ),
+                      ],
+                      if (newPhotos.isNotEmpty) ...[
+                        const SizedBox(height: AppSpacing.lg),
+                        NewPhoto(
+                          key: ValueKey(
+                            '${newPhotos.first.token}:${newPhotos.first.previewPath}',
+                          ),
+                          upload: newPhotos.first,
+                        ),
+                        if (newPhotos.first.serverStatus ==
+                            'needs_decision') ...[
+                          const SizedBox(height: AppSpacing.md),
+                          _GridDecision(
+                            upload: newPhotos.first,
+                            enabled: !_working,
+                            onDecide: (use) =>
+                                _decide(newPhotos.first, use: use),
+                          ),
+                        ],
+                      ],
+                      if (annotation.reasons.isNotEmpty) ...[
+                        const SizedBox(height: AppSpacing.lg),
+                        Text(
+                          'Why it needs a new photograph',
+                          style: textTheme.titleSmall,
+                        ),
+                        for (final reason in annotation.reasons)
+                          Padding(
+                            padding: const EdgeInsets.only(top: AppSpacing.xs),
+                            child: Text(reason, style: textTheme.bodyMedium),
+                          ),
+                      ],
+                      const SizedBox(height: AppSpacing.xl),
+                      Text(
+                        newPhotos.isEmpty
+                            ? 'Take a new photograph'
+                            : 'Take another photograph',
+                        style: textTheme.titleSmall,
+                      ),
+                      const SizedBox(height: AppSpacing.sm),
+                      PrimaryActionButton(
+                        icon: Icons.photo_camera,
+                        label: _working ? 'Saving…' : 'One photo',
+                        enabled: !_working,
+                        onTap: _takePhotos,
+                      ),
+                      const SizedBox(height: AppSpacing.sm),
+                      OutlinedButton.icon(
+                        icon: const Icon(Icons.grid_on),
+                        label: const Text('Grid, for long text'),
+                        onPressed: _working ? null : _takeGrid,
+                      ),
+                    ],
                   ),
-                ],
-                if (paths.closeup != null) ...[
-                  const SizedBox(height: AppSpacing.lg),
-                  OldPhoto(path: paths.closeup!, caption: 'What the wall picture shows'),
-                ],
-                if (newPhotos.isNotEmpty) ...[
-                  const SizedBox(height: AppSpacing.lg),
-                  NewPhoto(key: ValueKey('${newPhotos.first.token}:${newPhotos.first.previewPath}'), upload: newPhotos.first),
-                  if (newPhotos.first.serverStatus == 'needs_decision') ...[
-                    const SizedBox(height: AppSpacing.md),
-                    _GridDecision(
-                      upload: newPhotos.first,
-                      enabled: !_working,
-                      onDecide: (use) => _decide(newPhotos.first, use: use),
-                    ),
-                  ],
-                ],
-                if (annotation.reasons.isNotEmpty) ...[
-                  const SizedBox(height: AppSpacing.lg),
-                  Text('Why it needs a new photograph', style: textTheme.titleSmall),
-                  for (final reason in annotation.reasons)
-                    Padding(
-                      padding: const EdgeInsets.only(top: AppSpacing.xs),
-                      child: Text(reason, style: textTheme.bodyMedium),
-                    ),
-                ],
-                const SizedBox(height: AppSpacing.xl),
-                Text(
-                  newPhotos.isEmpty ? 'Take a new photograph' : 'Take another photograph',
-                  style: textTheme.titleSmall,
-                ),
-                const SizedBox(height: AppSpacing.sm),
-                PrimaryActionButton(
-                  icon: Icons.photo_camera,
-                  label: _working ? 'Saving…' : 'One photo',
-                  enabled: !_working,
-                  onTap: _takePhotos,
-                ),
-                const SizedBox(height: AppSpacing.sm),
-                OutlinedButton.icon(
-                  icon: const Icon(Icons.grid_on),
-                  label: const Text('Grid, for long text'),
-                  onPressed: _working ? null : _takeGrid,
-                ),
-              ],
-            ),
-            );
+                );
               },
             );
           },
@@ -255,7 +310,11 @@ class _AnnotationTaskPageState extends State<AnnotationTaskPage> {
 /// The dashboard could only join part of a grid. Nothing has changed yet: the
 /// picture above is what using it would give, and it's this person's choice.
 class _GridDecision extends StatelessWidget {
-  const _GridDecision({required this.upload, required this.enabled, required this.onDecide});
+  const _GridDecision({
+    required this.upload,
+    required this.enabled,
+    required this.onDecide,
+  });
 
   final FollowUpUploadRecord upload;
   final bool enabled;
@@ -263,7 +322,9 @@ class _GridDecision extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final missing = upload.failedCells.map((cell) => 'R${cell.row + 1}C${cell.col + 1}').join(', ');
+    final missing = upload.failedCells
+        .map((cell) => 'R${cell.row + 1}C${cell.col + 1}')
+        .join(', ');
     return Container(
       padding: const EdgeInsets.all(AppSpacing.md),
       decoration: BoxDecoration(
@@ -275,7 +336,9 @@ class _GridDecision extends StatelessWidget {
         children: [
           Text(
             'This did not join: $missing. The picture above is without it.',
-            style: Theme.of(context).textTheme.bodySmall?.copyWith(color: AppColors.onWarningContainer),
+            style: Theme.of(context).textTheme.bodySmall?.copyWith(
+              color: AppColors.onWarningContainer,
+            ),
           ),
           const SizedBox(height: AppSpacing.sm),
           Row(
